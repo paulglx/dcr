@@ -5,9 +5,9 @@ use std::io;
 
 /// Application state
 pub struct App {
-    /// List of DICOM tags to display (filtered view)
+    /// Visible tags to display (flattened based on expansion state)
     pub tags: Vec<DicomTag>,
-    /// All unfiltered DICOM tags
+    /// All unfiltered DICOM tags (hierarchical)
     pub all_tags: Vec<DicomTag>,
     /// Table state for tracking selection/scroll position
     pub table_state: TableState,
@@ -25,18 +25,104 @@ impl App {
     /// Create a new App instance with the given tags and file name
     pub fn new(tags: Vec<DicomTag>, file_name: String) -> Self {
         let mut table_state = TableState::default();
-        if !tags.is_empty() {
+        let visible_tags = Self::build_visible_tags_from(&tags);
+        if !visible_tags.is_empty() {
             table_state.select(Some(0));
         }
 
         Self {
-            tags: tags.clone(),
+            tags: visible_tags,
             all_tags: tags,
             table_state,
             should_quit: false,
             file_name,
             search_mode: false,
             search_query: String::new(),
+        }
+    }
+
+    /// Build the visible tags list from hierarchical tags based on expansion state
+    fn build_visible_tags_from(tags: &[DicomTag]) -> Vec<DicomTag> {
+        let mut visible = Vec::new();
+        Self::collect_visible_tags(tags, &mut visible);
+        visible
+    }
+
+    /// Recursively collect visible tags based on expansion state
+    fn collect_visible_tags(tags: &[DicomTag], visible: &mut Vec<DicomTag>) {
+        for tag in tags {
+            visible.push(tag.clone());
+            if tag.is_expanded && !tag.children.is_empty() {
+                Self::collect_visible_tags(&tag.children, visible);
+            }
+        }
+    }
+
+    /// Rebuild the visible tags list from all_tags
+    fn rebuild_visible_tags(&mut self) {
+        self.tags = Self::build_visible_tags_from(&self.all_tags);
+    }
+
+    /// Toggle the expansion state of the currently selected tag
+    fn toggle_expand(&mut self) {
+        if let Some(selected_idx) = self.table_state.selected() {
+            if selected_idx < self.tags.len() {
+                let selected_tag = &self.tags[selected_idx];
+                if selected_tag.is_expandable {
+                    // Build the path first before mutating
+                    let path = self.build_path_to_tag(selected_idx);
+                    Self::toggle_tag_in_tree(&mut self.all_tags, &path);
+                    self.rebuild_visible_tags();
+                }
+            }
+        }
+    }
+
+    /// Build a path (list of indices) to the tag at the given visible index
+    fn build_path_to_tag(&self, visible_idx: usize) -> Vec<usize> {
+        let mut path = Vec::new();
+        let mut current_idx = 0;
+        Self::find_path_to_index(&self.all_tags, visible_idx, &mut current_idx, &mut path);
+        path
+    }
+
+    /// Recursively find the path to a tag at the given visible index
+    fn find_path_to_index(tags: &[DicomTag], target_idx: usize, current_idx: &mut usize, path: &mut Vec<usize>) -> bool {
+        for (i, tag) in tags.iter().enumerate() {
+            if *current_idx == target_idx {
+                path.push(i);
+                return true;
+            }
+            *current_idx += 1;
+
+            if tag.is_expanded && !tag.children.is_empty() {
+                path.push(i);
+                if Self::find_path_to_index(&tag.children, target_idx, current_idx, path) {
+                    return true;
+                }
+                path.pop();
+            }
+        }
+        false
+    }
+
+    /// Toggle a tag's expansion state in the tree using the path
+    fn toggle_tag_in_tree(tags: &mut [DicomTag], path: &[usize]) {
+        if path.is_empty() {
+            return;
+        }
+
+        let idx = path[0];
+        if idx >= tags.len() {
+            return;
+        }
+
+        if path.len() == 1 {
+            // This is the target tag
+            tags[idx].is_expanded = !tags[idx].is_expanded;
+        } else {
+            // Recurse into children
+            Self::toggle_tag_in_tree(&mut tags[idx].children, &path[1..]);
         }
     }
 
@@ -86,6 +172,10 @@ impl App {
                                 self.search_mode = true;
                                 self.search_query.clear();
                             }
+                            KeyCode::Enter | KeyCode::Char(' ') => {
+                                // Toggle expand/collapse for sequences
+                                self.toggle_expand();
+                            }
                             _ => {}
                         }
                     }
@@ -121,17 +211,17 @@ impl App {
     /// Filter tags based on the current search query
     fn filter_tags(&mut self) {
         if self.search_query.is_empty() {
-            self.tags = self.all_tags.clone();
+            self.rebuild_visible_tags();
         } else {
             let query = self.search_query.to_lowercase();
-            self.tags = self
-                .all_tags
-                .iter()
+            // Flatten all tags and filter
+            let visible = Self::build_visible_tags_from(&self.all_tags);
+            self.tags = visible
+                .into_iter()
                 .filter(|tag| {
                     tag.tag.to_lowercase().contains(&query)
                         || tag.name.to_lowercase().contains(&query)
                 })
-                .cloned()
                 .collect();
         }
         self.reset_selection();

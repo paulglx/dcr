@@ -29,8 +29,18 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             } else {
                 Style::default()
             };
+
+            // Build indentation and tree indicator
+            let indent = "  ".repeat(tag.depth);
+            let expand_indicator = if tag.is_expandable {
+                if tag.is_expanded { "▼ " } else { "▶ " }
+            } else {
+                "  "
+            };
+            let tag_display = format!("{}{}{}", indent, expand_indicator, tag.tag);
+
             Row::new(vec![
-                Cell::from(tag.tag.as_str()),
+                Cell::from(tag_display),
                 Cell::from(tag.name.as_str()),
                 Cell::from(tag.vr.as_str()),
                 Cell::from(tag.value.as_str()),
@@ -40,8 +50,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         .collect();
 
     // Define column widths
+    // Tag column needs extra space for indentation (2 chars per depth) + expand indicator (2 chars)
     let widths = [
-        Constraint::Length(13),  // Tag: (GGGG,EEEE) = 11 chars + padding
+        Constraint::Length(30),  // Tag: indentation + expand indicator + (GGGG,EEEE)
         Constraint::Length(36),  // Name: typical tag names
         Constraint::Length(4),   // VR: 2 chars + padding
         Constraint::Fill(1),     // Value: fill remaining space
@@ -89,7 +100,7 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         frame.render_widget(search, help_area);
     } else {
         // Show normal help text
-        let help_text = " ↑/↓/j/k: Navigate | /: Search | q/Esc: Quit ";
+        let help_text = " ↑/↓/j/k: Navigate | Enter/Space: Expand/Collapse | /: Search | q/Esc: Quit ";
         let help = Paragraph::new(help_text)
             .style(Style::default().fg(Color::Cyan));
         frame.render_widget(help, help_area);
