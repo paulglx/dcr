@@ -1,5 +1,7 @@
+use dicom::core::dictionary::DataDictionary;
 use dicom::core::header::Header;
 use dicom::core::header::HasLength;
+use dicom::dictionary_std::StandardDataDictionary;
 use dicom::object::{open_file, FileDicomObject, InMemDicomObject};
 use std::path::Path;
 
@@ -8,6 +10,8 @@ use std::path::Path;
 pub struct DicomTag {
     /// Tag in (GGGG,EEEE) hex format
     pub tag: String,
+    /// Human-readable tag name
+    pub name: String,
     /// Value Representation (e.g., "PN", "CS", "LO")
     pub vr: String,
     /// The tag value, truncated if longer than 256 characters
@@ -28,12 +32,18 @@ fn extract_tags(obj: &FileDicomObject<InMemDicomObject>) -> Vec<DicomTag> {
         let tag = element.tag();
         let tag_str = format!("({:04X},{:04X})", tag.group(), tag.element());
 
+        let name = StandardDataDictionary
+            .by_tag(tag)
+            .map(|entry| entry.alias.to_string())
+            .unwrap_or_default();
+
         let vr = element.vr().to_string();
 
         let value = format_value(element.value());
 
         tags.push(DicomTag {
             tag: tag_str,
+            name,
             vr: vr.to_string(),
             value,
         });

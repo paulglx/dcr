@@ -14,6 +14,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     // Create the header row
     let header = Row::new(vec![
         Cell::from("Tag").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Cell::from("Name").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
         Cell::from("VR").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
         Cell::from("Value").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
     ])
@@ -27,6 +28,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         .map(|tag| {
             Row::new(vec![
                 Cell::from(Text::from(tag.tag.clone())),
+                Cell::from(Text::from(tag.name.clone())),
                 Cell::from(Text::from(tag.vr.clone())),
                 Cell::from(Text::from(tag.value.clone())),
             ])
@@ -36,6 +38,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     // Define column widths
     let widths = [
         Constraint::Length(13),  // Tag: (GGGG,EEEE) = 11 chars + padding
+        Constraint::Length(36),  // Name: typical tag names
         Constraint::Length(4),   // VR: 2 chars + padding
         Constraint::Fill(1),     // Value: fill remaining space
     ];
