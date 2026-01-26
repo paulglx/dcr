@@ -61,19 +61,15 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     // Render the table with state for selection
     frame.render_stateful_widget(table, area, &mut app.table_state);
 
-    // Render help text at the bottom
-    render_help(frame, area);
+    // Render help text or search input at the bottom
+    render_help(frame, area, app);
 }
 
-/// Render help text at the bottom of the screen
-fn render_help(frame: &mut Frame, area: Rect) {
+/// Render help text or search input at the bottom of the screen
+fn render_help(frame: &mut Frame, area: Rect, app: &App) {
     use ratatui::widgets::Paragraph;
 
-    let help_text = " ↑/↓/j/k: Navigate | q/Esc: Quit ";
-    let help = Paragraph::new(help_text)
-        .style(Style::default().fg(Color::Cyan));
-
-    // Position help at the bottom of the table area (inside the border)
+    // Position at the bottom of the table area (inside the border)
     let help_area = Rect {
         x: area.x + 1,
         y: area.y + area.height.saturating_sub(1),
@@ -81,5 +77,17 @@ fn render_help(frame: &mut Frame, area: Rect) {
         height: 1,
     };
 
-    frame.render_widget(help, help_area);
+    if app.search_mode {
+        // Show search input with cursor
+        let search_text = format!("/{}_", app.search_query);
+        let search = Paragraph::new(search_text)
+            .style(Style::default().fg(Color::Yellow));
+        frame.render_widget(search, help_area);
+    } else {
+        // Show normal help text
+        let help_text = " ↑/↓/j/k: Navigate | /: Search | q/Esc: Quit ";
+        let help = Paragraph::new(help_text)
+            .style(Style::default().fg(Color::Cyan));
+        frame.render_widget(help, help_area);
+    }
 }
