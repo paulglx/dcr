@@ -12,12 +12,20 @@ use ratatui::{
 pub fn render(frame: &mut Frame, app: &mut App) {
     let full_area = frame.area();
 
+    // Calculate validation pane height based on content
+    // 2 for borders + 1 for SOP Class line + 1 if missing fields are shown
+    let validation_height = if matches!(&app.validation_result, ValidationResult::Invalid(_)) {
+        4 // borders (2) + SOP Class (1) + Missing (1)
+    } else {
+        3 // borders (2) + SOP Class (1)
+    };
+
     // Split area: main table and validation pane
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(5),    // Table takes most space
-            Constraint::Length(5), // Validation pane
+            Constraint::Min(5),                    // Table takes most space
+            Constraint::Length(validation_height), // Validation pane
         ])
         .split(full_area);
 
@@ -156,48 +164,38 @@ fn render_validation_pane(frame: &mut Frame, area: Rect, app: &App) {
         SopClass::Unknown => "N/A",
     };
 
-    // Build content lines
-    let mut lines = vec![Line::from(vec![
-        Span::styled("SOP Class: ", Style::default().fg(Color::Yellow)),
-        Span::raw(format!("{} ({})", sop_class_text, sop_class_uid)),
-    ])];
+    // Determine title and color based on validation status
+    let (title, border_color) = match &app.validation_result {
+        ValidationResult::Valid => (" ✓ All required fields present ", Color::Blue),
+        ValidationResult::Invalid(_) => (" ✗ Missing required fields ", Color::Red),
+        ValidationResult::NotApplicable => (" Validation not applicable ", Color::DarkGray),
+    };
 
-    // Add validation status
-    match &app.validation_result {
-        ValidationResult::Valid => {
-            lines.push(Line::from(vec![
-                Span::styled("Status:    ", Style::default().fg(Color::Yellow)),
-                Span::styled(
-                    "✓ All required fields present",
-                    Style::default().fg(Color::Blue),
-                ),
-            ]));
-        }
-        ValidationResult::Invalid(missing) => {
-            lines.push(Line::from(vec![
-                Span::styled("Status:    ", Style::default().fg(Color::Yellow)),
-                Span::styled("✗ Missing required fields", Style::default().fg(Color::Red)),
-            ]));
-            // Add missing fields on next line(s)
-            let missing_text = missing.join(", ");
-            lines.push(Line::from(vec![
-                Span::styled("Missing:   ", Style::default().fg(Color::Yellow)),
-                Span::styled(missing_text, Style::default().fg(Color::Red)),
-            ]));
-        }
-        ValidationResult::NotApplicable => {
-            lines.push(Line::from(vec![
-                Span::styled("Status:    ", Style::default().fg(Color::Yellow)),
-                Span::styled(
-                    "Validation not applicable (unsupported modality)",
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ]));
-        }
+    // Build content lines
+    let mut lines = vec![Line::from(vec![Span::raw(format!(
+        "SOP Class: {} ({})",
+        sop_class_text, sop_class_uid
+    ))])];
+
+    // Add missing fields info if validation failed
+    if let ValidationResult::Invalid(missing) = &app.validation_result {
+        let missing_text = missing.join(", ");
+        lines.push(Line::from(vec![
+            Span::styled("Missing:   ", Style::default().fg(Color::Red)),
+            Span::styled(
+                missing_text,
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+        ]));
     }
 
-    let paragraph =
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" Validation "));
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color))
+            .title(title)
+            .title_style(Style::default().fg(border_color)),
+    );
 
     frame.render_widget(paragraph, area);
 }
