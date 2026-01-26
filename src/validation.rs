@@ -28,35 +28,53 @@ pub enum ValidationResult {
     NotApplicable,
 }
 
-/// Common Type 1 tags required for both CT and MRI
-const COMMON_TYPE1_TAGS: &[(Tag, &str)] = &[
-    (tags::PATIENT_ID, "PatientID"),
-    (tags::STUDY_INSTANCE_UID, "StudyInstanceUID"),
-    (tags::SERIES_INSTANCE_UID, "SeriesInstanceUID"),
-    (tags::MODALITY, "Modality"),
+// =============================================================================
+// Type 1 Tags organized by DICOM Module (per DICOM Part 3)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// SOP Common Module (M) - Type 1 tags
+// -----------------------------------------------------------------------------
+const SOP_COMMON_TYPE1_TAGS: &[(Tag, &str)] = &[
     (tags::SOP_CLASS_UID, "SOPClassUID"),
     (tags::SOP_INSTANCE_UID, "SOPInstanceUID"),
 ];
 
-/// Type 1 tags specific to CT Image IOD
-const CT_TYPE1_TAGS: &[(Tag, &str)] = &[
-    (tags::IMAGE_TYPE, "ImageType"),
-    (tags::SAMPLES_PER_PIXEL, "SamplesPerPixel"),
-    (tags::PHOTOMETRIC_INTERPRETATION, "PhotometricInterpretation"),
-    (tags::ROWS, "Rows"),
-    (tags::COLUMNS, "Columns"),
-    (tags::BITS_ALLOCATED, "BitsAllocated"),
-    (tags::BITS_STORED, "BitsStored"),
-    (tags::HIGH_BIT, "HighBit"),
-    (tags::PIXEL_REPRESENTATION, "PixelRepresentation"),
-    (tags::RESCALE_INTERCEPT, "RescaleIntercept"),
-    (tags::RESCALE_SLOPE, "RescaleSlope"),
-    (tags::KVP, "KVP"),
+// -----------------------------------------------------------------------------
+// General Study Module (M) - Type 1 tags
+// -----------------------------------------------------------------------------
+const GENERAL_STUDY_TYPE1_TAGS: &[(Tag, &str)] = &[
+    (tags::STUDY_INSTANCE_UID, "StudyInstanceUID"),
 ];
 
-/// Type 1 tags specific to MR Image IOD
-const MR_TYPE1_TAGS: &[(Tag, &str)] = &[
-    (tags::IMAGE_TYPE, "ImageType"),
+// -----------------------------------------------------------------------------
+// General Series Module (M) - Type 1 tags
+// -----------------------------------------------------------------------------
+const GENERAL_SERIES_TYPE1_TAGS: &[(Tag, &str)] = &[
+    (tags::MODALITY, "Modality"),
+    (tags::SERIES_INSTANCE_UID, "SeriesInstanceUID"),
+];
+
+// -----------------------------------------------------------------------------
+// Frame of Reference Module (M) - Type 1 tags
+// -----------------------------------------------------------------------------
+const FRAME_OF_REFERENCE_TYPE1_TAGS: &[(Tag, &str)] = &[
+    (tags::FRAME_OF_REFERENCE_UID, "FrameOfReferenceUID"),
+];
+
+// -----------------------------------------------------------------------------
+// Image Plane Module (M) - Type 1 tags
+// -----------------------------------------------------------------------------
+const IMAGE_PLANE_TYPE1_TAGS: &[(Tag, &str)] = &[
+    (tags::IMAGE_POSITION_PATIENT, "ImagePositionPatient"),
+    (tags::IMAGE_ORIENTATION_PATIENT, "ImageOrientationPatient"),
+    (tags::PIXEL_SPACING, "PixelSpacing"),
+];
+
+// -----------------------------------------------------------------------------
+// Image Pixel Module (M) - Type 1 tags
+// -----------------------------------------------------------------------------
+const IMAGE_PIXEL_TYPE1_TAGS: &[(Tag, &str)] = &[
     (tags::SAMPLES_PER_PIXEL, "SamplesPerPixel"),
     (tags::PHOTOMETRIC_INTERPRETATION, "PhotometricInterpretation"),
     (tags::ROWS, "Rows"),
@@ -65,9 +83,28 @@ const MR_TYPE1_TAGS: &[(Tag, &str)] = &[
     (tags::BITS_STORED, "BitsStored"),
     (tags::HIGH_BIT, "HighBit"),
     (tags::PIXEL_REPRESENTATION, "PixelRepresentation"),
+    (tags::PIXEL_DATA, "PixelData"),
+];
+
+// -----------------------------------------------------------------------------
+// CT Image Module (M) - Type 1 tags (CT only)
+// Note: KVP (0018,0060) is Type 2, not Type 1
+// -----------------------------------------------------------------------------
+const CT_IMAGE_TYPE1_TAGS: &[(Tag, &str)] = &[
+    (tags::IMAGE_TYPE, "ImageType"),
+    (tags::RESCALE_INTERCEPT, "RescaleIntercept"),
+    (tags::RESCALE_SLOPE, "RescaleSlope"),
+];
+
+// -----------------------------------------------------------------------------
+// MR Image Module (M) - Type 1 tags (MR only)
+// Note: ScanOptions (0018,0022) is Type 2, not Type 1
+// Note: RepetitionTime and EchoTime are Type 1C (conditional), skipped
+// -----------------------------------------------------------------------------
+const MR_IMAGE_TYPE1_TAGS: &[(Tag, &str)] = &[
+    (tags::IMAGE_TYPE, "ImageType"),
     (tags::SCANNING_SEQUENCE, "ScanningSequence"),
     (tags::SEQUENCE_VARIANT, "SequenceVariant"),
-    (tags::SCAN_OPTIONS, "ScanOptions"),
     (tags::MR_ACQUISITION_TYPE, "MRAcquisitionType"),
 ];
 
@@ -89,9 +126,9 @@ pub fn validate_type1_fields<P: AsRef<Path>>(path: P) -> Result<ValidationResult
     
     // Determine which modality-specific tags to check
     let modality_tags: &[(Tag, &str)] = if sop_class_uid == CT_IMAGE_STORAGE {
-        CT_TYPE1_TAGS
+        CT_IMAGE_TYPE1_TAGS
     } else if sop_class_uid == MR_IMAGE_STORAGE {
-        MR_TYPE1_TAGS
+        MR_IMAGE_TYPE1_TAGS
     } else {
         return Ok(ValidationResult::NotApplicable);
     };
@@ -99,14 +136,49 @@ pub fn validate_type1_fields<P: AsRef<Path>>(path: P) -> Result<ValidationResult
     // Collect missing tags
     let mut missing_tags = Vec::new();
     
-    // Check common Type 1 tags
-    for (tag, name) in COMMON_TYPE1_TAGS {
+    // Check SOP Common Module Type 1 tags
+    for (tag, name) in SOP_COMMON_TYPE1_TAGS {
         if !is_tag_present(&obj, *tag) {
             missing_tags.push(name.to_string());
         }
     }
     
-    // Check modality-specific Type 1 tags
+    // Check General Study Module Type 1 tags
+    for (tag, name) in GENERAL_STUDY_TYPE1_TAGS {
+        if !is_tag_present(&obj, *tag) {
+            missing_tags.push(name.to_string());
+        }
+    }
+    
+    // Check General Series Module Type 1 tags
+    for (tag, name) in GENERAL_SERIES_TYPE1_TAGS {
+        if !is_tag_present(&obj, *tag) {
+            missing_tags.push(name.to_string());
+        }
+    }
+    
+    // Check Frame of Reference Module Type 1 tags
+    for (tag, name) in FRAME_OF_REFERENCE_TYPE1_TAGS {
+        if !is_tag_present(&obj, *tag) {
+            missing_tags.push(name.to_string());
+        }
+    }
+    
+    // Check Image Plane Module Type 1 tags
+    for (tag, name) in IMAGE_PLANE_TYPE1_TAGS {
+        if !is_tag_present(&obj, *tag) {
+            missing_tags.push(name.to_string());
+        }
+    }
+    
+    // Check Image Pixel Module Type 1 tags
+    for (tag, name) in IMAGE_PIXEL_TYPE1_TAGS {
+        if !is_tag_present(&obj, *tag) {
+            missing_tags.push(name.to_string());
+        }
+    }
+    
+    // Check modality-specific Type 1 tags (CT or MR Image Module)
     for (tag, name) in modality_tags {
         if !is_tag_present(&obj, *tag) {
             missing_tags.push(name.to_string());
