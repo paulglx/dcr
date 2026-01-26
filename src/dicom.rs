@@ -18,6 +18,18 @@ pub struct DicomTag {
     pub value: String,
 }
 
+impl DicomTag {
+    /// Returns true if this is a private tag (odd group number)
+    pub fn is_private(&self) -> bool {
+        // Parse group from "(GGGG,EEEE)" format
+        self.tag
+            .get(1..5)
+            .and_then(|s| u16::from_str_radix(s, 16).ok())
+            .map(|group| group % 2 == 1)
+            .unwrap_or(false)
+    }
+}
+
 /// Load a DICOM file and extract all tags
 pub fn load_dicom_file<P: AsRef<Path>>(path: P) -> Result<Vec<DicomTag>, Box<dyn std::error::Error>> {
     let obj = open_file(path)?;

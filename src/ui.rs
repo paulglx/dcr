@@ -18,20 +18,25 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Cell::from("VR").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
         Cell::from("Value").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
     ])
-    .height(1)
-    .bottom_margin(1);
+    .height(1);
 
     // Create data rows from DICOM tags
     let rows: Vec<Row> = app
         .tags
         .iter()
         .map(|tag| {
+            let style = if tag.is_private() {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default()
+            };
             Row::new(vec![
                 Cell::from(Text::from(tag.tag.clone())),
                 Cell::from(Text::from(tag.name.clone())),
                 Cell::from(Text::from(tag.vr.clone())),
                 Cell::from(Text::from(tag.value.clone())),
             ])
+            .style(style)
         })
         .collect();
 
