@@ -2,7 +2,6 @@ use crate::app::App;
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
-    text::Text,
     widgets::{Block, Borders, Cell, Row, Table},
     Frame,
 };
@@ -31,10 +30,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 Style::default()
             };
             Row::new(vec![
-                Cell::from(Text::from(tag.tag.clone())),
-                Cell::from(Text::from(tag.name.clone())),
-                Cell::from(Text::from(tag.vr.clone())),
-                Cell::from(Text::from(tag.value.clone())),
+                Cell::from(tag.tag.as_str()),
+                Cell::from(tag.name.as_str()),
+                Cell::from(tag.vr.as_str()),
+                Cell::from(tag.value.as_str()),
             ])
             .style(style)
         })
