@@ -27,7 +27,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load DICOM file
     let tags = dicom::load_dicom_file(&args.file)?;
     
-    // Validate Type 1 fields
+    // Get SOP Class and validate Type 1 fields
+    let sop_class = validation::get_sop_class(&args.file)
+        .unwrap_or(validation::SopClass::Unknown);
     let validation_result = validation::validate_type1_fields(&args.file)
         .unwrap_or(validation::ValidationResult::NotApplicable);
 
@@ -39,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| args.file.to_string_lossy().to_string());
 
     // Create app state
-    let mut app = App::new(tags, file_name, validation_result);
+    let mut app = App::new(tags, file_name, validation_result, sop_class);
 
     // Setup terminal
     enable_raw_mode()?;

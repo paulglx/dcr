@@ -4,6 +4,19 @@ use dicom::dictionary_std::uids::{CT_IMAGE_STORAGE, MR_IMAGE_STORAGE};
 use dicom::object::{open_file, FileDicomObject, InMemDicomObject};
 use std::path::Path;
 
+/// Interpreted SOP Class information
+#[derive(Clone, Debug)]
+pub enum SopClass {
+    /// CT Image Storage
+    Ct,
+    /// MR Image Storage
+    Mr,
+    /// Other/unknown SOP Class with raw UID
+    Other(String),
+    /// No SOP Class UID found
+    Unknown,
+}
+
 /// Validation result for Type 1 fields
 #[derive(Clone, Debug)]
 pub enum ValidationResult {
@@ -121,4 +134,22 @@ fn is_tag_present(obj: &FileDicomObject<InMemDicomObject>, tag: Tag) -> bool {
             }
         })
         .unwrap_or(false)
+}
+
+/// Get the SOP Class from a DICOM file
+pub fn get_sop_class<P: AsRef<Path>>(path: P) -> Result<SopClass, Box<dyn std::error::Error>> {
+    let obj = open_file(path)?;
+    
+    let sop_class_uid = obj
+        .element(tags::SOP_CLASS_UID)
+        .ok()
+        .and_then(|e| e.to_str().ok())
+        .map(|s| s.trim().to_string());
+    
+    Ok(match sop_class_uid {
+        Some(uid) if uid == CT_IMAGE_STORAGE => SopClass::Ct,
+        Some(uid) if uid == MR_IMAGE_STORAGE => SopClass::Mr,
+        Some(uid) => SopClass::Other(uid),
+        None => SopClass::Unknown,
+    })
 }

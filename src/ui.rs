@@ -1,8 +1,9 @@
 use crate::app::App;
-use crate::validation::ValidationResult;
+use crate::validation::{SopClass, ValidationResult};
 use ratatui::{
-    layout::{Constraint, Layout, Direction, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
@@ -10,21 +11,21 @@ use ratatui::{
 /// Render the UI
 pub fn render(frame: &mut Frame, app: &mut App) {
     let full_area = frame.area();
-    
-    // Split area: main table and validation status bar
+
+    // Split area: main table and validation pane
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(5),     // Table takes most space
-            Constraint::Length(1),  // Validation status bar
+            Constraint::Min(5),    // Table takes most space
+            Constraint::Length(5), // Validation pane
         ])
         .split(full_area);
-    
+
     let area = chunks[0];
     let validation_area = chunks[1];
 
-    // Render validation status
-    render_validation_status(frame, validation_area, app);
+    // Render validation pane
+    render_validation_pane(frame, validation_area, app);
 
     // Create the header row
     let header = Row::new(vec![
@@ -138,24 +139,65 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
     }
 }
 
-/// Render the validation status bar
-fn render_validation_status(frame: &mut Frame, area: Rect, app: &App) {
-    let (text, style) = match &app.validation_result {
-        ValidationResult::Valid => (
-            " ✓ All Type 1 fields present".to_string(),
-            Style::default().fg(Color::Blue),
-        ),
-        ValidationResult::Invalid(missing) => {
-            let missing_list = missing.join(", ");
-            let text = format!(" ✗ Missing required fields: {}", missing_list);
-            (text, Style::default().fg(Color::Red))
-        }
-        ValidationResult::NotApplicable => (
-            " Validation not applicable (unsupported modality)".to_string(),
-            Style::default().fg(Color::DarkGray),
-        ),
+/// Render the validation pane
+fn render_validation_pane(frame: &mut Frame, area: Rect, app: &App) {
+    // Format SOP Class display
+    let sop_class_text = match &app.sop_class {
+        SopClass::Ct => "CT Image Storage",
+        SopClass::Mr => "MR Image Storage",
+        SopClass::Other(_) => "Other",
+        SopClass::Unknown => "Unknown",
     };
-    
-    let paragraph = Paragraph::new(text).style(style);
+
+    let sop_class_uid = match &app.sop_class {
+        SopClass::Ct => "1.2.840.10008.5.1.4.1.1.2",
+        SopClass::Mr => "1.2.840.10008.5.1.4.1.1.4",
+        SopClass::Other(uid) => uid.as_str(),
+        SopClass::Unknown => "N/A",
+    };
+
+    // Build content lines
+    let mut lines = vec![Line::from(vec![
+        Span::styled("SOP Class: ", Style::default().fg(Color::Yellow)),
+        Span::raw(format!("{} ({})", sop_class_text, sop_class_uid)),
+    ])];
+
+    // Add validation status
+    match &app.validation_result {
+        ValidationResult::Valid => {
+            lines.push(Line::from(vec![
+                Span::styled("Status:    ", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    "✓ All required fields present",
+                    Style::default().fg(Color::Blue),
+                ),
+            ]));
+        }
+        ValidationResult::Invalid(missing) => {
+            lines.push(Line::from(vec![
+                Span::styled("Status:    ", Style::default().fg(Color::Yellow)),
+                Span::styled("✗ Missing required fields", Style::default().fg(Color::Red)),
+            ]));
+            // Add missing fields on next line(s)
+            let missing_text = missing.join(", ");
+            lines.push(Line::from(vec![
+                Span::styled("Missing:   ", Style::default().fg(Color::Yellow)),
+                Span::styled(missing_text, Style::default().fg(Color::Red)),
+            ]));
+        }
+        ValidationResult::NotApplicable => {
+            lines.push(Line::from(vec![
+                Span::styled("Status:    ", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    "Validation not applicable (unsupported modality)",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+    }
+
+    let paragraph =
+        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" Validation "));
+
     frame.render_widget(paragraph, area);
 }

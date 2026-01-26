@@ -1,5 +1,5 @@
 use crate::dicom::DicomTag;
-use crate::validation::ValidationResult;
+use crate::validation::{SopClass, ValidationResult};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::widgets::TableState;
 use std::io;
@@ -22,11 +22,13 @@ pub struct App {
     pub search_query: String,
     /// Type 1 field validation result
     pub validation_result: ValidationResult,
+    /// SOP Class interpretation
+    pub sop_class: SopClass,
 }
 
 impl App {
-    /// Create a new App instance with the given tags, file name, and validation result
-    pub fn new(tags: Vec<DicomTag>, file_name: String, validation_result: ValidationResult) -> Self {
+    /// Create a new App instance with the given tags, file name, validation result, and SOP class
+    pub fn new(tags: Vec<DicomTag>, file_name: String, validation_result: ValidationResult, sop_class: SopClass) -> Self {
         let mut table_state = TableState::default();
         let visible_tags = Self::build_visible_tags_from(&tags);
         if !visible_tags.is_empty() {
@@ -42,6 +44,7 @@ impl App {
             search_mode: false,
             search_query: String::new(),
             validation_result,
+            sop_class,
         }
     }
 
