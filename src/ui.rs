@@ -12,10 +12,26 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     // Create the header row
     let header = Row::new(vec![
-        Cell::from("Tag").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("Name").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("VR").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("Value").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Cell::from("  Tag").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Name").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("VR").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Value").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
     ])
     .height(1);
 
@@ -33,7 +49,11 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             // Build indentation and tree indicator
             let indent = "  ".repeat(tag.depth);
             let expand_indicator = if tag.is_expandable {
-                if tag.is_expanded { "▼ " } else { "▶ " }
+                if tag.is_expanded {
+                    "▼ "
+                } else {
+                    "▶ "
+                }
             } else {
                 "  "
             };
@@ -52,10 +72,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     // Define column widths
     // Tag column needs extra space for indentation (2 chars per depth) + expand indicator (2 chars)
     let widths = [
-        Constraint::Length(30),  // Tag: indentation + expand indicator + (GGGG,EEEE)
-        Constraint::Length(36),  // Name: typical tag names
-        Constraint::Length(4),   // VR: 2 chars + padding
-        Constraint::Fill(1),     // Value: fill remaining space
+        Constraint::Length(16), // Tag: indentation + expand indicator + (GGGG,EEEE)
+        Constraint::Length(36), // Name: typical tag names
+        Constraint::Length(4),  // VR: 2 chars + padding
+        Constraint::Fill(1),    // Value: fill remaining space
     ];
 
     // Create the table widget
@@ -70,8 +90,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             Style::default()
                 .bg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(">> ");
+        );
 
     // Render the table with state for selection
     frame.render_stateful_widget(table, area, &mut app.table_state);
@@ -95,14 +114,12 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
     if app.search_mode {
         // Show search input with cursor
         let search_text = format!("/{}_", app.search_query);
-        let search = Paragraph::new(search_text)
-            .style(Style::default().fg(Color::Yellow));
+        let search = Paragraph::new(search_text).style(Style::default().fg(Color::Yellow));
         frame.render_widget(search, help_area);
     } else {
         // Show normal help text
         let help_text = " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | q/Esc: Quit ";
-        let help = Paragraph::new(help_text)
-            .style(Style::default().fg(Color::Cyan));
+        let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
         frame.render_widget(help, help_area);
     }
 }
