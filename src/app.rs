@@ -63,16 +63,38 @@ impl App {
         self.tags = Self::build_visible_tags_from(&self.all_tags);
     }
 
-    /// Toggle the expansion state of the currently selected tag
-    fn toggle_expand(&mut self) {
+    /// Expand the currently selected tag if it's a sequence
+    fn expand_selected(&mut self) {
         if let Some(selected_idx) = self.table_state.selected() {
             if selected_idx < self.tags.len() {
                 let selected_tag = &self.tags[selected_idx];
-                if selected_tag.is_expandable {
-                    // Build the path first before mutating
+                if selected_tag.is_expandable && !selected_tag.is_expanded {
                     let path = self.build_path_to_tag(selected_idx);
-                    Self::toggle_tag_in_tree(&mut self.all_tags, &path);
+                    Self::set_expanded_in_tree(&mut self.all_tags, &path, true);
                     self.rebuild_visible_tags();
+                }
+            }
+        }
+    }
+
+    /// Collapse the closest expanded parent of the current selection
+    fn collapse_parent(&mut self) {
+        if let Some(selected_idx) = self.table_state.selected() {
+            if selected_idx < self.tags.len() {
+                let current_depth = self.tags[selected_idx].depth;
+                
+                if current_depth > 0 {
+                    // Find the closest expanded parent (previous tag with lower depth)
+                    for i in (0..selected_idx).rev() {
+                        if self.tags[i].depth < current_depth && self.tags[i].is_expanded {
+                            let path = self.build_path_to_tag(i);
+                            Self::set_expanded_in_tree(&mut self.all_tags, &path, false);
+                            self.rebuild_visible_tags();
+                            // Move selection to the collapsed parent
+                            self.table_state.select(Some(i));
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -106,8 +128,8 @@ impl App {
         false
     }
 
-    /// Toggle a tag's expansion state in the tree using the path
-    fn toggle_tag_in_tree(tags: &mut [DicomTag], path: &[usize]) {
+    /// Set a tag's expansion state in the tree using the path
+    fn set_expanded_in_tree(tags: &mut [DicomTag], path: &[usize], expanded: bool) {
         if path.is_empty() {
             return;
         }
@@ -119,10 +141,10 @@ impl App {
 
         if path.len() == 1 {
             // This is the target tag
-            tags[idx].is_expanded = !tags[idx].is_expanded;
+            tags[idx].is_expanded = expanded;
         } else {
             // Recurse into children
-            Self::toggle_tag_in_tree(&mut tags[idx].children, &path[1..]);
+            Self::set_expanded_in_tree(&mut tags[idx].children, &path[1..], expanded);
         }
     }
 
@@ -172,9 +194,13 @@ impl App {
                                 self.search_mode = true;
                                 self.search_query.clear();
                             }
-                            KeyCode::Enter | KeyCode::Char(' ') => {
-                                // Toggle expand/collapse for sequences
-                                self.toggle_expand();
+                            KeyCode::Right | KeyCode::Char('l') => {
+                                // Expand sequence
+                                self.expand_selected();
+                            }
+                            KeyCode::Left | KeyCode::Char('h') => {
+                                // Collapse closest parent
+                                self.collapse_parent();
                             }
                             _ => {}
                         }

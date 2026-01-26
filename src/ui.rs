@@ -100,7 +100,7 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         frame.render_widget(search, help_area);
     } else {
         // Show normal help text
-        let help_text = " ↑/↓/j/k: Navigate | Enter/Space: Expand/Collapse | /: Search | q/Esc: Quit ";
+        let help_text = " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | q/Esc: Quit ";
         let help = Paragraph::new(help_text)
             .style(Style::default().fg(Color::Cyan));
         frame.render_widget(help, help_area);
