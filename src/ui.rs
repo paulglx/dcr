@@ -1,14 +1,30 @@
 use crate::app::App;
+use crate::validation::ValidationResult;
 use ratatui::{
-    layout::{Constraint, Rect},
+    layout::{Constraint, Layout, Direction, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
 
 /// Render the UI
 pub fn render(frame: &mut Frame, app: &mut App) {
-    let area = frame.area();
+    let full_area = frame.area();
+    
+    // Split area: main table and validation status bar
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(5),     // Table takes most space
+            Constraint::Length(1),  // Validation status bar
+        ])
+        .split(full_area);
+    
+    let area = chunks[0];
+    let validation_area = chunks[1];
+
+    // Render validation status
+    render_validation_status(frame, validation_area, app);
 
     // Create the header row
     let header = Row::new(vec![
@@ -101,8 +117,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
 /// Render help text or search input at the bottom of the screen
 fn render_help(frame: &mut Frame, area: Rect, app: &App) {
-    use ratatui::widgets::Paragraph;
-
     // Position at the bottom of the table area (inside the border)
     let help_area = Rect {
         x: area.x + 1,
@@ -122,4 +136,26 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
         frame.render_widget(help, help_area);
     }
+}
+
+/// Render the validation status bar
+fn render_validation_status(frame: &mut Frame, area: Rect, app: &App) {
+    let (text, style) = match &app.validation_result {
+        ValidationResult::Valid => (
+            " ✓ All Type 1 fields present".to_string(),
+            Style::default().fg(Color::Blue),
+        ),
+        ValidationResult::Invalid(missing) => {
+            let missing_list = missing.join(", ");
+            let text = format!(" ✗ Missing required fields: {}", missing_list);
+            (text, Style::default().fg(Color::Red))
+        }
+        ValidationResult::NotApplicable => (
+            " Validation not applicable (unsupported modality)".to_string(),
+            Style::default().fg(Color::DarkGray),
+        ),
+    };
+    
+    let paragraph = Paragraph::new(text).style(style);
+    frame.render_widget(paragraph, area);
 }

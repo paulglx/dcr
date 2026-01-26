@@ -1,6 +1,7 @@
 mod app;
 mod dicom;
 mod ui;
+mod validation;
 
 use app::App;
 use clap::Parser;
@@ -25,6 +26,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load DICOM file
     let tags = dicom::load_dicom_file(&args.file)?;
+    
+    // Validate Type 1 fields
+    let validation_result = validation::validate_type1_fields(&args.file)
+        .unwrap_or(validation::ValidationResult::NotApplicable);
 
     // Extract file name for display
     let file_name = args
@@ -34,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| args.file.to_string_lossy().to_string());
 
     // Create app state
-    let mut app = App::new(tags, file_name);
+    let mut app = App::new(tags, file_name, validation_result);
 
     // Setup terminal
     enable_raw_mode()?;
