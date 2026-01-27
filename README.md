@@ -25,3 +25,22 @@ Opens the specified DICOM file in the viewer.
 - Left arrow or h: Collapse parent tag
 - /: Search tags
 - q or Esc: Close search/Quit
+
+## Testing
+
+Run the test suite:
+
+```bash
+cargo test
+```
+
+### Code Coverage
+
+This project uses `cargo-llvm-cov` for coverage reporting.
+
+```bash
+# if not installed yet
+cargo install cargo-llvm-cov
+
+cargo llvm-cov 
+```
