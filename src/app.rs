@@ -29,7 +29,12 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(tags: Vec<DicomTag>, file_name: String, validation_result: ValidationResult, sop_class: SopClass) -> Self {
+    pub fn new(
+        tags: Vec<DicomTag>,
+        file_name: String,
+        validation_result: ValidationResult,
+        sop_class: SopClass,
+    ) -> Self {
         let mut table_state = TableState::default();
         let visible_tags = Self::build_visible_tags_from(&tags);
         if !visible_tags.is_empty() {
@@ -70,12 +75,12 @@ impl App {
         let source = self.filtered_tags.as_ref().unwrap_or(&self.all_tags);
         self.tags = Self::build_visible_tags_from(source);
     }
-    
+
     /// Returns the hierarchical tag source for path operations
     fn active_tags(&self) -> &Vec<DicomTag> {
         self.filtered_tags.as_ref().unwrap_or(&self.all_tags)
     }
-    
+
     /// Returns mutable hierarchical tag source for modifications
     fn active_tags_mut(&mut self) -> &mut Vec<DicomTag> {
         if self.filtered_tags.is_some() {
@@ -102,7 +107,7 @@ impl App {
         if let Some(selected_idx) = self.table_state.selected() {
             if selected_idx < self.tags.len() {
                 let current_depth = self.tags[selected_idx].depth;
-                
+
                 if current_depth > 0 {
                     for i in (0..selected_idx).rev() {
                         if self.tags[i].depth < current_depth && self.tags[i].is_expanded {
@@ -125,7 +130,12 @@ impl App {
         path
     }
 
-    fn find_path_to_index(tags: &[DicomTag], target_idx: usize, current_idx: &mut usize, path: &mut Vec<usize>) -> bool {
+    fn find_path_to_index(
+        tags: &[DicomTag],
+        target_idx: usize,
+        current_idx: &mut usize,
+        path: &mut Vec<usize>,
+    ) -> bool {
         for (i, tag) in tags.iter().enumerate() {
             if *current_idx == target_idx {
                 path.push(i);
@@ -190,7 +200,14 @@ impl App {
                     } else {
                         match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => {
-                                self.should_quit = true;
+                                if self.search_query == "" {
+                                    self.should_quit = true;
+                                } else {
+                                    self.search_query.clear();
+                                    self.filtered_tags = None;
+                                    self.rebuild_visible_tags();
+                                    self.reset_selection();
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 self.scroll_down(1);
@@ -200,7 +217,6 @@ impl App {
                             }
                             KeyCode::Char('/') => {
                                 self.search_mode = true;
-                                self.search_query.clear();
                             }
                             KeyCode::Right | KeyCode::Char('l') => {
                                 self.expand_selected();
@@ -245,7 +261,8 @@ impl App {
         } else {
             let query = self.search_query.to_lowercase();
             // Filter top-level tags but preserve their full hierarchy (children)
-            let filtered: Vec<DicomTag> = self.all_tags
+            let filtered: Vec<DicomTag> = self
+                .all_tags
                 .iter()
                 .filter(|tag| {
                     tag.tag.to_lowercase().contains(&query)
