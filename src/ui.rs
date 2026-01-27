@@ -8,34 +8,28 @@ use ratatui::{
     Frame,
 };
 
-/// Render the UI
 pub fn render(frame: &mut Frame, app: &mut App) {
     let full_area = frame.area();
 
-    // Calculate validation pane height based on content
-    // 2 for borders + 1 for SOP Class line + 1 if missing fields are shown
     let validation_height = if matches!(&app.validation_result, ValidationResult::Invalid(_)) {
-        4 // borders (2) + SOP Class (1) + Missing (1)
+        4
     } else {
-        3 // borders (2) + SOP Class (1)
+        3
     };
 
-    // Split area: main table and validation pane
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(5),                    // Table takes most space
-            Constraint::Length(validation_height), // Validation pane
+            Constraint::Min(5),
+            Constraint::Length(validation_height),
         ])
         .split(full_area);
 
     let area = chunks[0];
     let validation_area = chunks[1];
 
-    // Render validation pane
     render_validation_pane(frame, validation_area, app);
 
-    // Create the header row
     let header = Row::new(vec![
         Cell::from("  Tag").style(
             Style::default()
@@ -60,7 +54,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     ])
     .height(1);
 
-    // Create data rows from DICOM tags
     let rows: Vec<Row> = app
         .tags
         .iter()
@@ -71,7 +64,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 Style::default()
             };
 
-            // Build indentation and tree indicator
             let indent = "  ".repeat(tag.depth);
             let expand_indicator = if tag.is_expandable {
                 if tag.is_expanded {
@@ -94,16 +86,13 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         })
         .collect();
 
-    // Define column widths
-    // Tag column needs extra space for indentation (2 chars per depth) + expand indicator (2 chars)
     let widths = [
-        Constraint::Length(16), // Tag: indentation + expand indicator + (GGGG,EEEE)
-        Constraint::Length(36), // Name: typical tag names
-        Constraint::Length(4),  // VR: 2 chars + padding
-        Constraint::Fill(1),    // Value: fill remaining space
+        Constraint::Length(16),
+        Constraint::Length(36),
+        Constraint::Length(4),
+        Constraint::Fill(1),
     ];
 
-    // Create the table widget
     let table = Table::new(rows, widths)
         .header(header)
         .block(
@@ -117,16 +106,12 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    // Render the table with state for selection
     frame.render_stateful_widget(table, area, &mut app.table_state);
 
-    // Render help text or search input at the bottom
     render_help(frame, area, app);
 }
 
-/// Render help text or search input at the bottom of the screen
 fn render_help(frame: &mut Frame, area: Rect, app: &App) {
-    // Position at the bottom of the table area (inside the border)
     let help_area = Rect {
         x: area.x + 1,
         y: area.y + area.height.saturating_sub(1),
@@ -135,21 +120,17 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     if app.search_mode {
-        // Show search input with cursor
         let search_text = format!("/{}_", app.search_query);
         let search = Paragraph::new(search_text).style(Style::default().fg(Color::Yellow));
         frame.render_widget(search, help_area);
     } else {
-        // Show normal help text
         let help_text = " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | q/Esc: Quit ";
         let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
         frame.render_widget(help, help_area);
     }
 }
 
-/// Render the validation pane
 fn render_validation_pane(frame: &mut Frame, area: Rect, app: &App) {
-    // Format SOP Class display
     let sop_class_text = match &app.sop_class {
         SopClass::Ct => "CT Image Storage",
         SopClass::Mr => "MR Image Storage",
@@ -164,20 +145,17 @@ fn render_validation_pane(frame: &mut Frame, area: Rect, app: &App) {
         SopClass::Unknown => "N/A",
     };
 
-    // Determine title and color based on validation status
     let (title, border_color) = match &app.validation_result {
         ValidationResult::Valid => (" ✓ All required fields present ", Color::Blue),
         ValidationResult::Invalid(_) => (" ✗ Missing required fields ", Color::Red),
         ValidationResult::NotApplicable => (" Validation not applicable ", Color::DarkGray),
     };
 
-    // Build content lines
     let mut lines = vec![Line::from(vec![Span::raw(format!(
         "SOP Class: {} ({})",
         sop_class_text, sop_class_uid
     ))])];
 
-    // Add missing fields info if validation failed
     if let ValidationResult::Invalid(missing) = &app.validation_result {
         let missing_text = missing.join(", ");
         lines.push(Line::from(vec![

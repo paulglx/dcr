@@ -27,7 +27,6 @@ pub struct App {
 }
 
 impl App {
-    /// Create a new App instance with the given tags, file name, validation result, and SOP class
     pub fn new(tags: Vec<DicomTag>, file_name: String, validation_result: ValidationResult, sop_class: SopClass) -> Self {
         let mut table_state = TableState::default();
         let visible_tags = Self::build_visible_tags_from(&tags);
@@ -48,14 +47,12 @@ impl App {
         }
     }
 
-    /// Build the visible tags list from hierarchical tags based on expansion state
     fn build_visible_tags_from(tags: &[DicomTag]) -> Vec<DicomTag> {
         let mut visible = Vec::new();
         Self::collect_visible_tags(tags, &mut visible);
         visible
     }
 
-    /// Recursively collect visible tags based on expansion state
     fn collect_visible_tags(tags: &[DicomTag], visible: &mut Vec<DicomTag>) {
         for tag in tags {
             visible.push(tag.clone());
@@ -65,12 +62,10 @@ impl App {
         }
     }
 
-    /// Rebuild the visible tags list from all_tags
     fn rebuild_visible_tags(&mut self) {
         self.tags = Self::build_visible_tags_from(&self.all_tags);
     }
 
-    /// Expand the currently selected tag if it's a sequence
     fn expand_selected(&mut self) {
         if let Some(selected_idx) = self.table_state.selected() {
             if selected_idx < self.tags.len() {
@@ -84,20 +79,17 @@ impl App {
         }
     }
 
-    /// Collapse the closest expanded parent of the current selection
     fn collapse_parent(&mut self) {
         if let Some(selected_idx) = self.table_state.selected() {
             if selected_idx < self.tags.len() {
                 let current_depth = self.tags[selected_idx].depth;
                 
                 if current_depth > 0 {
-                    // Find the closest expanded parent (previous tag with lower depth)
                     for i in (0..selected_idx).rev() {
                         if self.tags[i].depth < current_depth && self.tags[i].is_expanded {
                             let path = self.build_path_to_tag(i);
                             Self::set_expanded_in_tree(&mut self.all_tags, &path, false);
                             self.rebuild_visible_tags();
-                            // Move selection to the collapsed parent
                             self.table_state.select(Some(i));
                             break;
                         }
@@ -107,7 +99,6 @@ impl App {
         }
     }
 
-    /// Build a path (list of indices) to the tag at the given visible index
     fn build_path_to_tag(&self, visible_idx: usize) -> Vec<usize> {
         let mut path = Vec::new();
         let mut current_idx = 0;
@@ -115,7 +106,6 @@ impl App {
         path
     }
 
-    /// Recursively find the path to a tag at the given visible index
     fn find_path_to_index(tags: &[DicomTag], target_idx: usize, current_idx: &mut usize, path: &mut Vec<usize>) -> bool {
         for (i, tag) in tags.iter().enumerate() {
             if *current_idx == target_idx {
@@ -135,7 +125,6 @@ impl App {
         false
     }
 
-    /// Set a tag's expansion state in the tree using the path
     fn set_expanded_in_tree(tags: &mut [DicomTag], path: &[usize], expanded: bool) {
         if path.is_empty() {
             return;
@@ -147,31 +136,25 @@ impl App {
         }
 
         if path.len() == 1 {
-            // This is the target tag
             tags[idx].is_expanded = expanded;
         } else {
-            // Recurse into children
             Self::set_expanded_in_tree(&mut tags[idx].children, &path[1..], expanded);
         }
     }
 
-    /// Handle keyboard input events
     pub fn handle_events(&mut self) -> io::Result<()> {
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     if self.search_mode {
-                        // Handle search mode input
                         match key.code {
                             KeyCode::Esc => {
-                                // Cancel search and restore full list
                                 self.search_mode = false;
                                 self.search_query.clear();
                                 self.tags = self.all_tags.clone();
                                 self.reset_selection();
                             }
                             KeyCode::Enter => {
-                                // Confirm search and keep filter active
                                 self.search_mode = false;
                             }
                             KeyCode::Backspace => {
@@ -185,7 +168,6 @@ impl App {
                             _ => {}
                         }
                     } else {
-                        // Normal mode
                         match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => {
                                 self.should_quit = true;
@@ -197,16 +179,13 @@ impl App {
                                 self.scroll_up(1);
                             }
                             KeyCode::Char('/') => {
-                                // Activate search mode
                                 self.search_mode = true;
                                 self.search_query.clear();
                             }
                             KeyCode::Right | KeyCode::Char('l') => {
-                                // Expand sequence
                                 self.expand_selected();
                             }
                             KeyCode::Left | KeyCode::Char('h') => {
-                                // Collapse closest parent
                                 self.collapse_parent();
                             }
                             _ => {}
@@ -218,7 +197,6 @@ impl App {
         Ok(())
     }
 
-    /// Scroll down by the given number of rows
     fn scroll_down(&mut self, amount: usize) {
         if self.tags.is_empty() {
             return;
@@ -230,7 +208,6 @@ impl App {
         self.table_state.select(Some(new_index));
     }
 
-    /// Scroll up by the given number of rows
     fn scroll_up(&mut self, amount: usize) {
         if self.tags.is_empty() {
             return;
@@ -241,13 +218,11 @@ impl App {
         self.table_state.select(Some(new_index));
     }
 
-    /// Filter tags based on the current search query
     fn filter_tags(&mut self) {
         if self.search_query.is_empty() {
             self.rebuild_visible_tags();
         } else {
             let query = self.search_query.to_lowercase();
-            // Flatten all tags and filter
             let visible = Self::build_visible_tags_from(&self.all_tags);
             self.tags = visible
                 .into_iter()
@@ -260,7 +235,6 @@ impl App {
         self.reset_selection();
     }
 
-    /// Reset the table selection to the first item
     fn reset_selection(&mut self) {
         if self.tags.is_empty() {
             self.table_state.select(None);
