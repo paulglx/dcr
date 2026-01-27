@@ -2,6 +2,8 @@
 
 DICOM TUI viewer for inspecting DICOM file tags in a terminal interface.
 
+<img src=".github/screenshot.png" alt="dcr TUI screenshot" />
+
 ## Building
 
 ```
