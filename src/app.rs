@@ -10,6 +10,8 @@ pub struct App {
     pub tags: Vec<DicomTag>,
     /// All unfiltered DICOM tags (hierarchical)
     pub all_tags: Vec<DicomTag>,
+    /// Filtered top-level tags when search is active (hierarchical, preserves children)
+    filtered_tags: Option<Vec<DicomTag>>,
     /// Table state for tracking selection/scroll position
     pub table_state: TableState,
     /// Whether the application should quit
@@ -37,6 +39,7 @@ impl App {
         Self {
             tags: visible_tags,
             all_tags: tags,
+            filtered_tags: None,
             table_state,
             should_quit: false,
             file_name,
@@ -63,7 +66,23 @@ impl App {
     }
 
     fn rebuild_visible_tags(&mut self) {
-        self.tags = Self::build_visible_tags_from(&self.all_tags);
+        // Use filtered_tags if a search filter is active, otherwise use all_tags
+        let source = self.filtered_tags.as_ref().unwrap_or(&self.all_tags);
+        self.tags = Self::build_visible_tags_from(source);
+    }
+    
+    /// Returns the hierarchical tag source for path operations
+    fn active_tags(&self) -> &Vec<DicomTag> {
+        self.filtered_tags.as_ref().unwrap_or(&self.all_tags)
+    }
+    
+    /// Returns mutable hierarchical tag source for modifications
+    fn active_tags_mut(&mut self) -> &mut Vec<DicomTag> {
+        if self.filtered_tags.is_some() {
+            self.filtered_tags.as_mut().unwrap()
+        } else {
+            &mut self.all_tags
+        }
     }
 
     fn expand_selected(&mut self) {
@@ -72,7 +91,7 @@ impl App {
                 let selected_tag = &self.tags[selected_idx];
                 if selected_tag.is_expandable && !selected_tag.is_expanded {
                     let path = self.build_path_to_tag(selected_idx);
-                    Self::set_expanded_in_tree(&mut self.all_tags, &path, true);
+                    Self::set_expanded_in_tree(self.active_tags_mut(), &path, true);
                     self.rebuild_visible_tags();
                 }
             }
@@ -88,7 +107,7 @@ impl App {
                     for i in (0..selected_idx).rev() {
                         if self.tags[i].depth < current_depth && self.tags[i].is_expanded {
                             let path = self.build_path_to_tag(i);
-                            Self::set_expanded_in_tree(&mut self.all_tags, &path, false);
+                            Self::set_expanded_in_tree(self.active_tags_mut(), &path, false);
                             self.rebuild_visible_tags();
                             self.table_state.select(Some(i));
                             break;
@@ -102,7 +121,7 @@ impl App {
     fn build_path_to_tag(&self, visible_idx: usize) -> Vec<usize> {
         let mut path = Vec::new();
         let mut current_idx = 0;
-        Self::find_path_to_index(&self.all_tags, visible_idx, &mut current_idx, &mut path);
+        Self::find_path_to_index(self.active_tags(), visible_idx, &mut current_idx, &mut path);
         path
     }
 
@@ -151,7 +170,8 @@ impl App {
                             KeyCode::Esc => {
                                 self.search_mode = false;
                                 self.search_query.clear();
-                                self.tags = self.all_tags.clone();
+                                self.filtered_tags = None;
+                                self.rebuild_visible_tags();
                                 self.reset_selection();
                             }
                             KeyCode::Enter => {
@@ -220,17 +240,21 @@ impl App {
 
     fn filter_tags(&mut self) {
         if self.search_query.is_empty() {
+            self.filtered_tags = None;
             self.rebuild_visible_tags();
         } else {
             let query = self.search_query.to_lowercase();
-            let visible = Self::build_visible_tags_from(&self.all_tags);
-            self.tags = visible
-                .into_iter()
+            // Filter top-level tags but preserve their full hierarchy (children)
+            let filtered: Vec<DicomTag> = self.all_tags
+                .iter()
                 .filter(|tag| {
                     tag.tag.to_lowercase().contains(&query)
                         || tag.name.to_lowercase().contains(&query)
                 })
+                .cloned()
                 .collect();
+            self.filtered_tags = Some(filtered);
+            self.rebuild_visible_tags();
         }
         self.reset_selection();
     }
