@@ -26,6 +26,8 @@ pub struct DicomTag {
     pub vr: String,
     /// The tag value, truncated if longer than 256 characters
     pub value: String,
+    /// Baseline value for changed tags in diff mode (None otherwise)
+    pub baseline_value: Option<String>,
     /// Nesting level (0 = root)
     pub depth: usize,
     /// True if this tag has children (is a sequence)
@@ -78,6 +80,7 @@ pub fn compare_dicom_files<P: AsRef<Path>>(
     for modified_tag in &modified_tags {
         let tag_id = &modified_tag.tag;
         let mut diff_status = DiffStatus::Added;
+        let mut baseline_value = None;
 
         if let Some(baseline_tag) = baseline_map.get(tag_id) {
             baseline_seen.insert(tag_id.clone());
@@ -86,12 +89,14 @@ pub fn compare_dicom_files<P: AsRef<Path>>(
                 diff_status = DiffStatus::Unchanged;
             } else {
                 diff_status = DiffStatus::Changed;
+                baseline_value = Some(baseline_tag.value.clone());
             }
         }
 
         // Clone modified_tag and set diff_status, preserving children
         let mut result_tag = modified_tag.clone();
         result_tag.diff_status = Some(diff_status);
+        result_tag.baseline_value = baseline_value;
         result_tags.push(result_tag);
     }
 
@@ -137,6 +142,7 @@ fn extract_tags(obj: &FileDicomObject<InMemDicomObject>) -> Vec<DicomTag> {
             name,
             vr: vr.to_string(),
             value,
+            baseline_value: None,
             depth: 0,
             is_expandable,
             is_expanded: false,
@@ -158,6 +164,7 @@ fn extract_sequence_items(items: &[InMemDicomObject], depth: usize) -> Vec<Dicom
             name: String::new(),
             vr: String::new(),
             value: format!("<{} element(s)>", item.into_iter().count()),
+            baseline_value: None,
             depth,
             is_expandable: !item_children.is_empty(),
             is_expanded: false,
@@ -198,6 +205,7 @@ fn extract_tags_from_inmem_object(obj: &InMemDicomObject, depth: usize) -> Vec<D
             name,
             vr: vr.to_string(),
             value,
+            baseline_value: None,
             depth,
             is_expandable,
             is_expanded: false,

@@ -8,6 +8,7 @@ fn create_test_tag(tag: &str, name: &str, depth: usize, expandable: bool, childr
         name: name.to_string(),
         vr: "LO".to_string(),
         value: "test value".to_string(),
+        baseline_value: None,
         depth,
         is_expandable: expandable,
         is_expanded: false,

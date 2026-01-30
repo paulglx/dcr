@@ -33,6 +33,7 @@ pub struct App {
 }
 
 impl App {
+    #[allow(dead_code)]
     pub fn new(
         tags: Vec<DicomTag>,
         file_name: String,

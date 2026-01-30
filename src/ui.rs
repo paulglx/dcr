@@ -8,6 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
+use similar::{ChangeTag, TextDiff};
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let full_area = frame.area();
@@ -69,18 +70,30 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             let tag_display = format!("{}{}{}", indent, expand_indicator, tag.tag);
 
             // Determine styles based on diff status
-            let (row_style, value_style) = if let Some(diff_status) = &tag.diff_status {
+            let (row_style, value_cell) = if let Some(diff_status) = &tag.diff_status {
                 match diff_status {
                     DiffStatus::Deleted => (
                         Style::default().fg(Color::Red),
-                        Style::default().fg(Color::Red),
+                        Cell::from(tag.value.as_str()).style(Style::default().fg(Color::Red)),
                     ),
                     DiffStatus::Added => (
                         Style::default().fg(Color::Green),
-                        Style::default().fg(Color::Green),
+                        Cell::from(tag.value.as_str()).style(Style::default().fg(Color::Green)),
                     ),
-                    DiffStatus::Changed => (Style::default(), Style::default().fg(Color::Blue)),
-                    DiffStatus::Unchanged => (Style::default(), Style::default()),
+                    DiffStatus::Changed => {
+                        // Use inline diff if baseline_value is available
+                        let value_cell = if let Some(ref baseline) = tag.baseline_value {
+                            Cell::from(render_inline_diff(baseline, &tag.value))
+                        } else {
+                            // Fallback to simple blue text for backward compatibility
+                            Cell::from(tag.value.as_str()).style(Style::default().fg(Color::Blue))
+                        };
+                        (Style::default(), value_cell)
+                    }
+                    DiffStatus::Unchanged => (
+                        Style::default(),
+                        Cell::from(tag.value.as_str()).style(Style::default()),
+                    ),
                 }
             } else {
                 // Normal mode: use private tag styling
@@ -89,14 +102,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 } else {
                     Style::default()
                 };
-                (base_style, base_style)
+                (base_style, Cell::from(tag.value.as_str()).style(base_style))
             };
 
             Row::new(vec![
                 Cell::from(tag_display).style(row_style),
                 Cell::from(tag.name.as_str()).style(row_style),
                 Cell::from(tag.vr.as_str()).style(row_style),
-                Cell::from(tag.value.as_str()).style(value_style),
+                value_cell,
             ])
         })
         .collect();
@@ -130,6 +143,28 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     frame.render_stateful_widget(table, area, &mut app.table_state);
 
     render_help(frame, area, app);
+}
+
+fn render_inline_diff(baseline: &str, modified: &str) -> Line<'static> {
+    let diff = TextDiff::from_words(baseline, modified);
+    let mut spans = Vec::new();
+
+    for change in diff.iter_all_changes() {
+        let text = change.value();
+        let style = match change.tag() {
+            ChangeTag::Delete => Style::default()
+                .fg(Color::Red)
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::CROSSED_OUT),
+            ChangeTag::Insert => Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+            ChangeTag::Equal => Style::default(),
+        };
+        spans.push(Span::styled(text.to_string(), style));
+    }
+
+    Line::from(spans)
 }
 
 fn render_help(frame: &mut Frame, area: Rect, app: &App) {
