@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::dicom::DiffStatus;
 use crate::validation::{SopClass, ValidationResult};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -19,10 +20,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(5),
-            Constraint::Length(validation_height),
-        ])
+        .constraints([Constraint::Min(5), Constraint::Length(validation_height)])
         .split(full_area);
 
     let area = chunks[0];
@@ -58,12 +56,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         .tags
         .iter()
         .map(|tag| {
-            let style = if tag.is_private() {
-                Style::default().fg(Color::DarkGray)
-            } else {
-                Style::default()
-            };
-
             let indent = "  ".repeat(tag.depth);
             let expand_indicator = if tag.is_expandable {
                 if tag.is_expanded {
@@ -76,13 +68,36 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             };
             let tag_display = format!("{}{}{}", indent, expand_indicator, tag.tag);
 
+            // Determine styles based on diff status
+            let (row_style, value_style) = if let Some(diff_status) = &tag.diff_status {
+                match diff_status {
+                    DiffStatus::Deleted => (
+                        Style::default().fg(Color::Red),
+                        Style::default().fg(Color::Red),
+                    ),
+                    DiffStatus::Added => (
+                        Style::default().fg(Color::Green),
+                        Style::default().fg(Color::Green),
+                    ),
+                    DiffStatus::Changed => (Style::default(), Style::default().fg(Color::Blue)),
+                    DiffStatus::Unchanged => (Style::default(), Style::default()),
+                }
+            } else {
+                // Normal mode: use private tag styling
+                let base_style = if tag.is_private() {
+                    Style::default().fg(Color::DarkGray)
+                } else {
+                    Style::default()
+                };
+                (base_style, base_style)
+            };
+
             Row::new(vec![
-                Cell::from(tag_display),
-                Cell::from(tag.name.as_str()),
-                Cell::from(tag.vr.as_str()),
-                Cell::from(tag.value.as_str()),
+                Cell::from(tag_display).style(row_style),
+                Cell::from(tag.name.as_str()).style(row_style),
+                Cell::from(tag.vr.as_str()).style(row_style),
+                Cell::from(tag.value.as_str()).style(value_style),
             ])
-            .style(style)
         })
         .collect();
 
@@ -93,13 +108,19 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Constraint::Fill(1),
     ];
 
+    let title = if app.diff_mode {
+        if let Some(ref modified_name) = app.modified_name {
+            format!(" DICOM Diff: {} ↔ {} ", app.file_name, modified_name)
+        } else {
+            format!(" DICOM Diff: {} ", app.file_name)
+        }
+    } else {
+        format!(" DICOM Viewer: {} ", app.file_name)
+    };
+
     let table = Table::new(rows, widths)
         .header(header)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" DICOM Viewer: {} ", app.file_name)),
-        )
+        .block(Block::default().borders(Borders::ALL).title(title))
         .row_highlight_style(
             Style::default()
                 .bg(Color::DarkGray)

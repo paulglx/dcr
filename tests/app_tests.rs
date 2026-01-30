@@ -12,6 +12,7 @@ fn create_test_tag(tag: &str, name: &str, depth: usize, expandable: bool, childr
         is_expandable: expandable,
         is_expanded: false,
         children,
+        diff_status: None,
     }
 }
 

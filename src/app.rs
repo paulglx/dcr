@@ -16,8 +16,12 @@ pub struct App {
     pub table_state: TableState,
     /// Whether the application should quit
     pub should_quit: bool,
-    /// The file name being viewed
+    /// The file name being viewed (or baseline name in diff mode)
     pub file_name: String,
+    /// Whether diff mode is active
+    pub diff_mode: bool,
+    /// Modified file name in diff mode
+    pub modified_name: Option<String>,
     /// Whether search mode is active
     pub search_mode: bool,
     /// Current search query
@@ -35,6 +39,17 @@ impl App {
         validation_result: ValidationResult,
         sop_class: SopClass,
     ) -> Self {
+        Self::new_with_diff(tags, file_name, None, validation_result, sop_class, false)
+    }
+
+    pub fn new_with_diff(
+        tags: Vec<DicomTag>,
+        file_name: String,
+        modified_name: Option<String>,
+        validation_result: ValidationResult,
+        sop_class: SopClass,
+        diff_mode: bool,
+    ) -> Self {
         let mut table_state = TableState::default();
         let visible_tags = Self::build_visible_tags_from(&tags);
         if !visible_tags.is_empty() {
@@ -48,6 +63,8 @@ impl App {
             table_state,
             should_quit: false,
             file_name,
+            diff_mode,
+            modified_name,
             search_mode: false,
             search_query: String::new(),
             validation_result,

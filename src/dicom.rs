@@ -1,9 +1,19 @@
 use dicom::core::dictionary::DataDictionary;
-use dicom::core::header::Header;
 use dicom::core::header::HasLength;
+use dicom::core::header::Header;
 use dicom::dictionary_std::StandardDataDictionary;
 use dicom::object::{open_file, FileDicomObject, InMemDicomObject};
+use std::collections::HashMap;
 use std::path::Path;
+
+/// Status of a tag in diff mode
+#[derive(Clone, Debug, PartialEq)]
+pub enum DiffStatus {
+    Unchanged,
+    Added,   // In modified but not baseline
+    Deleted, // In baseline but not modified
+    Changed, // Same tag, different value
+}
 
 /// Represents a single DICOM tag with its properties
 #[derive(Clone, Debug)]
@@ -24,6 +34,8 @@ pub struct DicomTag {
     pub is_expanded: bool,
     /// Nested sequence items
     pub children: Vec<DicomTag>,
+    /// Diff status (None in normal mode, Some(status) in diff mode)
+    pub diff_status: Option<DiffStatus>,
 }
 
 impl DicomTag {
@@ -36,9 +48,65 @@ impl DicomTag {
     }
 }
 
-pub fn load_dicom_file<P: AsRef<Path>>(path: P) -> Result<Vec<DicomTag>, Box<dyn std::error::Error>> {
+pub fn load_dicom_file<P: AsRef<Path>>(
+    path: P,
+) -> Result<Vec<DicomTag>, Box<dyn std::error::Error>> {
     let obj = open_file(path)?;
     Ok(extract_tags(&obj))
+}
+
+/// Compare two DICOM files and return tags with diff status
+pub fn compare_dicom_files<P: AsRef<Path>>(
+    baseline_path: P,
+    modified_path: P,
+) -> Result<Vec<DicomTag>, Box<dyn std::error::Error>> {
+    let baseline_tags = load_dicom_file(baseline_path)?;
+    let modified_tags = load_dicom_file(modified_path)?;
+
+    // Build a map of baseline tags by tag ID (only root-level tags, sequences treated as units)
+    let mut baseline_map: HashMap<String, &DicomTag> = HashMap::new();
+    for tag in &baseline_tags {
+        baseline_map.insert(tag.tag.clone(), tag);
+    }
+
+    // Track which tags from baseline we've seen
+    let mut baseline_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Process modified tags and compare with baseline
+    let mut result_tags: Vec<DicomTag> = Vec::new();
+
+    for modified_tag in &modified_tags {
+        let tag_id = &modified_tag.tag;
+        let mut diff_status = DiffStatus::Added;
+
+        if let Some(baseline_tag) = baseline_map.get(tag_id) {
+            baseline_seen.insert(tag_id.clone());
+            // Compare values (for sequences, compare the sequence representation)
+            if baseline_tag.value == modified_tag.value {
+                diff_status = DiffStatus::Unchanged;
+            } else {
+                diff_status = DiffStatus::Changed;
+            }
+        }
+
+        // Clone modified_tag and set diff_status, preserving children
+        let mut result_tag = modified_tag.clone();
+        result_tag.diff_status = Some(diff_status);
+        result_tags.push(result_tag);
+    }
+
+    // Add remaining baseline tags as Deleted
+    for baseline_tag in &baseline_tags {
+        if !baseline_seen.contains(&baseline_tag.tag) {
+            let mut deleted_tag = baseline_tag.clone();
+            deleted_tag.diff_status = Some(DiffStatus::Deleted);
+            result_tags.push(deleted_tag);
+        }
+    }
+
+    result_tags.sort_by(|a, b| a.tag.cmp(&b.tag));
+
+    Ok(result_tags)
 }
 
 fn extract_tags(obj: &FileDicomObject<InMemDicomObject>) -> Vec<DicomTag> {
@@ -73,6 +141,7 @@ fn extract_tags(obj: &FileDicomObject<InMemDicomObject>) -> Vec<DicomTag> {
             is_expandable,
             is_expanded: false,
             children,
+            diff_status: None,
         });
     }
 
@@ -93,6 +162,7 @@ fn extract_sequence_items(items: &[InMemDicomObject], depth: usize) -> Vec<Dicom
             is_expandable: !item_children.is_empty(),
             is_expanded: false,
             children: item_children,
+            diff_status: None,
         };
         children.push(item_header);
     }
@@ -132,6 +202,7 @@ fn extract_tags_from_inmem_object(obj: &InMemDicomObject, depth: usize) -> Vec<D
             is_expandable,
             is_expanded: false,
             children,
+            diff_status: None,
         });
     }
 
@@ -140,7 +211,10 @@ fn extract_tags_from_inmem_object(obj: &InMemDicomObject, depth: usize) -> Vec<D
 
 fn format_value<I: HasLength, P>(value: &dicom::core::value::Value<I, P>) -> String {
     let value_str = if value.primitive().is_some() {
-        value.to_str().map(|c| c.into_owned()).unwrap_or_else(|_| "<Error>".to_string())
+        value
+            .to_str()
+            .map(|c| c.into_owned())
+            .unwrap_or_else(|_| "<Error>".to_string())
     } else if let Some(seq) = value.items() {
         format!("<Sequence with {} item(s)>", seq.len())
     } else if value.fragments().is_some() {
