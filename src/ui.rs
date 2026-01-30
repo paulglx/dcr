@@ -29,7 +29,17 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     render_validation_pane(frame, validation_area, app);
 
-    let header = Row::new(vec![
+    let mut header_cells = vec![];
+    if app.diff_mode {
+        header_cells.push(
+            Cell::from(" ").style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        );
+    }
+    header_cells.extend(vec![
         Cell::from("  Tag").style(
             Style::default()
                 .fg(Color::Yellow)
@@ -50,8 +60,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         ),
-    ])
-    .height(1);
+    ]);
+    let header = Row::new(header_cells).height(1);
 
     let rows: Vec<Row> = app
         .tags
@@ -105,21 +115,50 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 (base_style, Cell::from(tag.value.as_str()).style(base_style))
             };
 
-            Row::new(vec![
+            let mut row_cells = vec![];
+            
+            // Add diff indicator if in diff mode
+            if app.diff_mode {
+                let (indicator, indicator_style) = if let Some(diff_status) = &tag.diff_status {
+                    match diff_status {
+                        DiffStatus::Added => ("+", Style::default().fg(Color::Green)),
+                        DiffStatus::Deleted => ("-", Style::default().fg(Color::Red)),
+                        DiffStatus::Changed => ("M", Style::default().fg(Color::Blue)),
+                        DiffStatus::Unchanged => (" ", Style::default()),
+                    }
+                } else {
+                    (" ", Style::default())
+                };
+                row_cells.push(Cell::from(indicator).style(indicator_style));
+            }
+            
+            row_cells.extend(vec![
                 Cell::from(tag_display).style(row_style),
                 Cell::from(tag.name.as_str()).style(row_style),
                 Cell::from(tag.vr.as_str()).style(row_style),
                 value_cell,
-            ])
+            ]);
+            
+            Row::new(row_cells)
         })
         .collect();
 
-    let widths = [
-        Constraint::Length(16),
-        Constraint::Length(36),
-        Constraint::Length(4),
-        Constraint::Fill(1),
-    ];
+    let widths: Vec<Constraint> = if app.diff_mode {
+        vec![
+            Constraint::Length(1),
+            Constraint::Length(16),
+            Constraint::Length(36),
+            Constraint::Length(4),
+            Constraint::Fill(1),
+        ]
+    } else {
+        vec![
+            Constraint::Length(16),
+            Constraint::Length(36),
+            Constraint::Length(4),
+            Constraint::Fill(1),
+        ]
+    };
 
     let title = if app.diff_mode {
         if let Some(ref modified_name) = app.modified_name {
