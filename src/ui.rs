@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::dicom::DiffStatus;
+use crate::dicom::{parse_dicom_datetime_delta_ms, DiffStatus};
 use crate::validation::{SopClass, ValidationResult};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -93,7 +93,21 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                     DiffStatus::Changed => {
                         // Use inline diff if baseline_value is available
                         let value_cell = if let Some(ref baseline) = tag.baseline_value {
-                            Cell::from(render_inline_diff(baseline, &tag.value))
+                            let mut line = render_inline_diff(baseline, &tag.value);
+                            if let Some(delta_ms) =
+                                parse_dicom_datetime_delta_ms(&tag.vr, baseline, &tag.value)
+                            {
+                                let suffix = if delta_ms >= 0 {
+                                    format!(" (+{} ms)", delta_ms)
+                                } else {
+                                    format!(" ({} ms)", delta_ms)
+                                };
+                                line.spans.push(Span::styled(
+                                    suffix,
+                                    Style::default().fg(Color::DarkGray),
+                                ));
+                            }
+                            Cell::from(line)
                         } else {
                             // Fallback to simple blue text for backward compatibility
                             Cell::from(tag.value.as_str()).style(Style::default().fg(Color::Blue))
@@ -116,7 +130,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             };
 
             let mut row_cells = vec![];
-            
+
             // Add diff indicator if in diff mode
             if app.diff_mode {
                 let (indicator, indicator_style) = if let Some(diff_status) = &tag.diff_status {
@@ -131,14 +145,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 };
                 row_cells.push(Cell::from(indicator).style(indicator_style));
             }
-            
+
             row_cells.extend(vec![
                 Cell::from(tag_display).style(row_style),
                 Cell::from(tag.name.as_str()).style(row_style),
                 Cell::from(tag.vr.as_str()).style(row_style),
                 value_cell,
             ]);
-            
+
             Row::new(row_cells)
         })
         .collect();
