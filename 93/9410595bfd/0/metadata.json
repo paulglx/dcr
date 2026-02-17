@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "939410595bfd",
+  "session_id": "a225a07a-7881-44ad-a65a-62cf8791970f",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-17T14:02:45.555975Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/app.rs",
+    "src/main.rs",
+    "src/ui.rs"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "8bef6a53-eaaf-4ac1-9206-407e5b27213a",
+  "checkpoint_transcript_start": 50,
+  "transcript_lines_at_start": 50,
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 28547,
+    "cache_read_tokens": 141004,
+    "output_tokens": 2537,
+    "api_call_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-17T14:02:45.479806Z",
+    "agent_lines": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 0,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-paul-guilloux-Documents-dcr/a225a07a-7881-44ad-a65a-62cf8791970f.jsonl"
+}

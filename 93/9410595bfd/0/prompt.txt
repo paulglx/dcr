@@ -1,0 +1,38 @@
+Implement the following plan:
+
+# Add Mouse Scroll & Click-to-Select
+
+## Context
+The DICOM TUI viewer currently only supports keyboard navigation. Adding mouse scroll and click-to-highlight will make it more intuitive to browse tags.
+
+## Changes
+
+### 1. Enable mouse capture (`src/main.rs`)
+- Import `EnableMouseCapture` / `DisableMouseCapture` from `crossterm::event`
+- Add `EnableMouseCapture` to the `execute!` call on startup
+- Add `DisableMouseCapture` to the cleanup `execute!` call
+
+### 2. Store the table area for click mapping (`src/app.rs` + `src/ui.rs`)
+- Add `pub table_area: ratatui::layout::Rect` field to `App` (initialized to `Rect::default()`)
+- In `ui::render`, set `app.table_area = area` before rendering the table (line ~196)
+
+### 3. Handle mouse events (`src/app.rs`)
+- Import `Event::Mouse`, `MouseEventKind`, `MouseButton` from crossterm
+- In `handle_events`, match on `Event::Mouse` alongside the existing `Event::Key`:
+  - **`MouseEventKind::ScrollDown`** → `self.scroll_down(3)`
+  - **`MouseEventKind::ScrollUp`** → `self.scroll_up(3)`
+  - **`MouseEventKind::Down(MouseButton::Left)`** → compute clicked row index:
+    - `row_in_viewport = mouse_y - table_area.y - 2` (border + header)
+    - `tag_index = table_state.offset() + row_in_viewport`
+    - Bounds-check against `self.tags.len()` and the visible rows in the table area, then `table_state.select(Some(tag_index))`
+
+## Verification
+- `cargo build` compiles without errors
+- Run the app with a DICOM file, scroll with mouse wheel, click rows to highlight
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/paul.guilloux/.REDACTED.jsonl
+
+---
+
+Re-apply all changes, they were lost
