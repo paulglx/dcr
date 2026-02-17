@@ -1,0 +1,28 @@
+# Session Context
+
+## User Prompts
+
+### Prompt 1
+
+Implement the following plan:
+
+# Add `-d` short argument for diff mode
+
+## Context
+Currently, diff mode is only enabled via `--diff`. The user wants `-d` as a short alias.
+
+## Change
+**File:** `src/main.rs:20`
+
+Add `short = 'd'` to the `#[arg]` attribute:
+
+```rust
+#[arg(short = 'd', long, value_names = ["BASELINE", "MODIFIED"], num_args = 2)]
+```
+
+This enables `dcr -d baseline.dcm modified.dcm` as equivalent to `dcr --diff baseline.dcm modified.dcm`.
+
+## Verification
+- `cargo build`
+- `dcr --hel...
+
