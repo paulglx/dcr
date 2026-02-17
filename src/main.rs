@@ -17,7 +17,7 @@ use std::{io, path::PathBuf};
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Compare two DICOM files (baseline vs modified)
-    #[arg(long, value_names = ["BASELINE", "MODIFIED"], num_args = 2)]
+    #[arg(short = 'd', long, value_names = ["BASELINE", "MODIFIED"], num_args = 2)]
     diff: Option<Vec<PathBuf>>,
 
     /// Path to the DICOM file to view (used when --diff is not specified)
