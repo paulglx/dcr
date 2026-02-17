@@ -193,6 +193,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                 .add_modifier(Modifier::BOLD),
         );
 
+    app.table_area = area;
     frame.render_stateful_widget(table, area, &mut app.table_state);
 
     render_help(frame, area, app);

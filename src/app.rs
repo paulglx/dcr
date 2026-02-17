@@ -1,6 +1,7 @@
 use crate::dicom::DicomTag;
 use crate::validation::{SopClass, ValidationResult};
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
+use ratatui::layout::Rect;
 use ratatui::widgets::TableState;
 use std::io;
 
@@ -30,6 +31,7 @@ pub struct App {
     pub validation_result: ValidationResult,
     /// SOP Class interpretation
     pub sop_class: SopClass,
+    pub table_area: Rect,
 }
 
 impl App {
@@ -70,6 +72,7 @@ impl App {
             search_query: String::new(),
             validation_result,
             sop_class,
+            table_area: Rect::default(),
         }
     }
 
@@ -191,8 +194,8 @@ impl App {
 
     pub fn handle_events(&mut self) -> io::Result<()> {
         if event::poll(std::time::Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
                     if self.search_mode {
                         match key.code {
                             KeyCode::Esc => {
@@ -246,6 +249,24 @@ impl App {
                         }
                     }
                 }
+                Event::Mouse(mouse) => match mouse.kind {
+                    MouseEventKind::ScrollDown => self.scroll_down(3),
+                    MouseEventKind::ScrollUp => self.scroll_up(3),
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        let y = mouse.row;
+                        if y > self.table_area.y + 1
+                            && y < self.table_area.y + self.table_area.height
+                        {
+                            let row_in_viewport = (y - self.table_area.y - 2) as usize;
+                            let tag_index = self.table_state.offset() + row_in_viewport;
+                            if tag_index < self.tags.len() {
+                                self.table_state.select(Some(tag_index));
+                            }
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
             }
         }
         Ok(())
