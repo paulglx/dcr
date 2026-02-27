@@ -69,12 +69,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let file = args
                 .file
                 .ok_or("Either --diff with two files or a single file argument is required")?;
-            let tags = dicom::load_dicom_file(&file)?;
 
-            let sop_class =
-                validation::get_sop_class(&file).unwrap_or(validation::SopClass::Unknown);
-            let validation_result = validation::validate_type1_fields(&file)
-                .unwrap_or(validation::ValidationResult::NotApplicable);
+            let obj = ::dicom::object::open_file(&file)?;
+            let tags = dicom::extract_tags(&obj);
+            let sop_class = validation::get_sop_class_from_obj(&obj);
+            let validation_result = validation::validate_type1_fields_from_obj(&obj);
 
             let file_name = file
                 .file_name()
