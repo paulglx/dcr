@@ -1,0 +1,84 @@
+Implement the following plan:
+
+# Add Tests for Untested Modules
+
+## Context
+
+The SOLID reorganization is complete. The codebase has 44 passing tests but several modules have zero or minimal test coverage. This plan adds tests for the most impactful gaps: datetime parsing, diff comparison, app scroll/search/tree navigation, and the `new_with_diff` constructor.
+
+Skipped: `handle_events` (requires terminal/crossterm), `decode_preview` (requires Kitty terminal), `ui.rs` rendering functions (require frame — except `render_inline_diff` which is testable but private).
+
+## New Tests
+
+### 1. `tests/datetime_tests.rs` — datetime delta parsing (0 coverage → full)
+
+Tests for `dcr::dicom::parse_dicom_datetime_delta_ms`:
+- DA VR: same day → 0ms, 1 day forward, 1 day backward (negative)
+- TM VR: same time → 0ms, 1 hour diff, fractional seconds ("120000.500")
+- DT VR: same datetime → 0ms, cross-day delta, fractional seconds
+- Unknown VR (e.g. "PN") → `None`
+- Multi-value input ("20230101\\20230102") → uses first value only
+- Malformed input → `None`
+
+### 2. `tests/diff_tests.rs` — DICOM file comparison (0 coverage → integration)
+
+Tests using the two fixture files (`ct-tap.dcm` vs `ct-tap-with-missing-data.dcm`):
+- `compare_dicom_files` returns `Ok` with non-empty results
+- Result contains tags with `DiffStatus::Unchanged`, `Changed`, `Added`, and/or `Deleted`
+- All result tags have `diff_status` set (not `None`)
+- Results are sorted by tag string
+- `Changed` tags have `baseline_value` populated
+- Nonexistent file returns error
+
+### 3. `tests/app_tests.rs` — extend with scroll, search, tree, and constructor tests
+
+New tests added to existing file:
+
+**Scroll (scroll_down / scroll_up):**
+- `scroll_down(1)` from index 0 on 5 tags → selects 1
+- `scroll_down` past end → clamps to last
+- `scroll_down` on empty → no-op (selection stays None)
+- `scroll_up(1)` from index 2 → selects 1
+- `scroll_up` at 0 → stays at 0
+- `scroll_up` on empty → no-op
+
+**Search (filter_tags / reset_selection):**
+- `filter_tags` with empty query → all tags visible
+- `filter_tags` matching tag string → only matching tags
+- `filter_tags` matching name (case-insensitive) → matches
+- `filter_tags` with no matches → empty
+- `reset_selection` with tags → selects 0
+- `reset_selection` with empty → None
+
+**Tree (expand_selected / collapse_parent):**
+- `expand_selected` on collapsed expandable → expands, children visible
+- `expand_selected` on non-expandable → no-op
+- `collapse_parent` on child → collapses parent, selects parent
+- `collapse_parent` on root tag (depth 0) → no-op
+
+**Constructor (new_with_diff):**
+- Verify `diff_mode`, `modified_name`, `dicom_file_path` are stored correctly
+
+### Visibility note
+
+`scroll_down`, `scroll_up`, `filter_tags`, `expand_selected`, `collapse_parent` are all `pub(super)` — not accessible from `tests/`. These tests will call them indirectly through `App`'s public interface, or we make the methods `pub` (they're on a pub struct and are reasonable public API for testing).
+
+**Approach:** Change `pub(super)` to `pub` for `scroll_down`, `scroll_up`, `filter_tags`, `reset_selection`, `expand_selected`, `collapse_parent` in `input.rs`, `search.rs`, and `tree.rs`. These are methods on a `pub` struct and having them public is reasonable.
+
+## Files to modify
+
+- `src/app/input.rs` — change `pub(super)` to `pub` on `scroll_down`, `scroll_up`
+- `src/app/search.rs` — change `pub(super)` to `pub` on `filter_tags`, `reset_selection`
+- `src/app/tree.rs` — change `pub(super)` to `pub` on `expand_selected`, `collapse_parent`
+- `src/app/state.rs` — change `pub(super)` to `pub` on `filtered_tags` field
+- `tests/app_tests.rs` — add scroll, search, tree, constructor tests
+- `tests/datetime_tests.rs` — new file
+- `tests/diff_tests.rs` — new file
+
+## Verification
+
+- `cargo test` — all existing + new tests pass
+- `cargo clippy` — no new warnings
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/paul.guilloux/.REDACTED.jsonl
