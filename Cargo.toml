@@ -11,3 +11,7 @@ dicom = "0.8"
 clap = { version = "4.5", features = ["derive"] }
 similar = "2.5"
 chrono = "0.4"
+dicom-pixeldata = { version = "0.8", features = ["image"] }
+dicom-transfer-syntax-registry = { version = "0.8", features = ["native"] }
+ratatui-image = "3.0.0"
+image = "0.25"

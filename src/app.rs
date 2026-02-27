@@ -3,7 +3,10 @@ use crate::validation::{SopClass, ValidationResult};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
 use ratatui::layout::Rect;
 use ratatui::widgets::TableState;
+use ratatui_image::picker::Picker;
+use ratatui_image::protocol::StatefulProtocol;
 use std::io;
+use std::path::PathBuf;
 
 /// Application state
 pub struct App {
@@ -32,19 +35,14 @@ pub struct App {
     /// SOP Class interpretation
     pub sop_class: SopClass,
     pub table_area: Rect,
+    pub show_preview: bool,
+    pub preview_image: Option<StatefulProtocol>,
+    pub preview_error: Option<String>,
+    pub dicom_file_path: Option<PathBuf>,
+    pub picker: Option<Picker>,
 }
 
 impl App {
-    #[allow(dead_code)]
-    pub fn new(
-        tags: Vec<DicomTag>,
-        file_name: String,
-        validation_result: ValidationResult,
-        sop_class: SopClass,
-    ) -> Self {
-        Self::new_with_diff(tags, file_name, None, validation_result, sop_class, false)
-    }
-
     pub fn new_with_diff(
         tags: Vec<DicomTag>,
         file_name: String,
@@ -52,6 +50,8 @@ impl App {
         validation_result: ValidationResult,
         sop_class: SopClass,
         diff_mode: bool,
+        dicom_file_path: Option<PathBuf>,
+        picker: Option<Picker>,
     ) -> Self {
         let mut table_state = TableState::default();
         let visible_tags = Self::build_visible_tags_from(&tags);
@@ -59,7 +59,7 @@ impl App {
             table_state.select(Some(0));
         }
 
-        Self {
+        let mut app = Self {
             tags: visible_tags,
             all_tags: tags,
             filtered_tags: None,
@@ -73,7 +73,14 @@ impl App {
             validation_result,
             sop_class,
             table_area: Rect::default(),
-        }
+            show_preview: true,
+            preview_image: None,
+            preview_error: None,
+            dicom_file_path,
+            picker,
+        };
+        app.decode_preview();
+        app
     }
 
     fn build_visible_tags_from(tags: &[DicomTag]) -> Vec<DicomTag> {
@@ -239,6 +246,9 @@ impl App {
                             KeyCode::Char('/') => {
                                 self.search_mode = true;
                             }
+                            KeyCode::Char('p') => {
+                                self.toggle_preview();
+                            }
                             KeyCode::Right | KeyCode::Char('l') => {
                                 self.expand_selected();
                             }
@@ -321,5 +331,61 @@ impl App {
         } else {
             self.table_state.select(Some(0));
         }
+    }
+
+    fn toggle_preview(&mut self) {
+        self.show_preview = !self.show_preview;
+
+        if self.show_preview && self.preview_image.is_none() && self.preview_error.is_none() {
+            self.decode_preview();
+        }
+    }
+
+    fn decode_preview(&mut self) {
+        use dicom_pixeldata::PixelDecoder;
+        use ratatui_image::picker::ProtocolType;
+
+        let Some(picker) = &self.picker else {
+            self.preview_error = Some("Preview requires a Kitty-compatible terminal".into());
+            return;
+        };
+
+        if picker.protocol_type() != ProtocolType::Kitty {
+            self.preview_error = Some("Preview requires a Kitty-compatible terminal".into());
+            return;
+        }
+
+        let Some(path) = &self.dicom_file_path else {
+            self.preview_error = Some("No DICOM file path available".into());
+            return;
+        };
+
+        let obj = match dicom::object::open_file(path) {
+            Ok(obj) => obj,
+            Err(e) => {
+                self.preview_error = Some(format!("Failed to open DICOM file: {}", e));
+                return;
+            }
+        };
+
+        let pixel_data = match obj.decode_pixel_data() {
+            Ok(pd) => pd,
+            Err(e) => {
+                self.preview_error = Some(format!("Failed to decode pixel data: {}", e));
+                return;
+            }
+        };
+
+        let dyn_img = match pixel_data.to_dynamic_image(0) {
+            Ok(img) => img,
+            Err(e) => {
+                self.preview_error = Some(format!("Failed to convert to image: {}", e));
+                return;
+            }
+        };
+
+        let mut picker = self.picker.take().unwrap();
+        self.preview_image = Some(picker.new_resize_protocol(dyn_img));
+        self.picker = Some(picker);
     }
 }

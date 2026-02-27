@@ -11,6 +11,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::prelude::*;
+use ratatui_image::picker::Picker;
 use std::{io, path::PathBuf};
 
 /// DICOM TUI Viewer - View DICOM file tags in a terminal interface
@@ -29,7 +30,9 @@ struct Args {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let (tags, file_name, modified_name, validation_result, sop_class, diff_mode) =
+    let picker = Picker::from_query_stdio().ok();
+
+    let (tags, file_name, modified_name, validation_result, sop_class, diff_mode, dicom_file_path) =
         if let Some(diff_files) = &args.diff {
             if diff_files.len() != 2 {
                 return Err("--diff requires exactly two file arguments".into());
@@ -60,6 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 validation_result,
                 sop_class,
                 true,
+                Some(baseline_path.clone()),
             )
         } else {
             let file = args
@@ -77,7 +81,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| file.to_string_lossy().to_string());
 
-            (tags, file_name, None, validation_result, sop_class, false)
+            (
+                tags,
+                file_name,
+                None,
+                validation_result,
+                sop_class,
+                false,
+                Some(file),
+            )
         };
 
     let mut app = App::new_with_diff(
@@ -87,6 +99,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         validation_result,
         sop_class,
         diff_mode,
+        dicom_file_path,
+        picker,
     );
 
     enable_raw_mode()?;

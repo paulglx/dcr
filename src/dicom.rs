@@ -118,6 +118,32 @@ pub fn compare_dicom_files<P: AsRef<Path>>(
 fn extract_tags(obj: &FileDicomObject<InMemDicomObject>) -> Vec<DicomTag> {
     let mut tags = Vec::new();
 
+    for element in obj.meta().to_element_iter() {
+        let tag = element.tag();
+        let tag_str = format!("({:04X},{:04X})", tag.group(), tag.element());
+
+        let name = StandardDataDictionary
+            .by_tag(tag)
+            .map(|entry| entry.alias.to_string())
+            .unwrap_or_default();
+
+        let vr = element.vr().to_string();
+        let value = format_value(element.value());
+
+        tags.push(DicomTag {
+            tag: tag_str,
+            name,
+            vr: vr.to_string(),
+            value,
+            baseline_value: None,
+            depth: 0,
+            is_expandable: false,
+            is_expanded: false,
+            children: Vec::new(),
+            diff_status: None,
+        });
+    }
+
     for element in obj {
         let tag = element.tag();
         let tag_str = format!("({:04X},{:04X})", tag.group(), tag.element());

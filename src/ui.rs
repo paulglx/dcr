@@ -8,10 +8,21 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
+use ratatui_image::StatefulImage;
 use similar::{ChangeTag, TextDiff};
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let full_area = frame.area();
+
+    let (main_area, preview_area) = if app.show_preview {
+        let h_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(full_area);
+        (h_chunks[0], Some(h_chunks[1]))
+    } else {
+        (full_area, None)
+    };
 
     let validation_height = if matches!(&app.validation_result, ValidationResult::Invalid(_)) {
         4
@@ -22,12 +33,16 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(5), Constraint::Length(validation_height)])
-        .split(full_area);
+        .split(main_area);
 
     let area = chunks[0];
     let validation_area = chunks[1];
 
     render_validation_pane(frame, validation_area, app);
+
+    if let Some(preview_area) = preview_area {
+        render_preview_pane(frame, preview_area, app);
+    }
 
     let mut header_cells = vec![];
     if app.diff_mode {
@@ -234,9 +249,32 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         let search = Paragraph::new(search_text).style(Style::default().fg(Color::Yellow));
         frame.render_widget(search, help_area);
     } else {
-        let help_text = " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | q/Esc: Quit ";
+        let help_text = " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | q/Esc: Quit ";
         let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
         frame.render_widget(help, help_area);
+    }
+}
+
+fn render_preview_pane(frame: &mut Frame, area: Rect, app: &mut App) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Preview ");
+
+    if let Some(ref error) = app.preview_error {
+        let paragraph = Paragraph::new(error.as_str())
+            .style(Style::default().fg(Color::Red))
+            .block(block);
+        frame.render_widget(paragraph, area);
+    } else if let Some(ref mut protocol) = app.preview_image {
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        let image = StatefulImage::new(None);
+        frame.render_stateful_widget(image, inner, protocol);
+    } else {
+        let paragraph = Paragraph::new("Decoding...")
+            .style(Style::default().fg(Color::DarkGray))
+            .block(block);
+        frame.render_widget(paragraph, area);
     }
 }
 
