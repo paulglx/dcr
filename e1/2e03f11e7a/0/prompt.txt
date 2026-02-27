@@ -1,0 +1,64 @@
+Implement the following plan:
+
+# Graceful exit for invalid path arguments
+
+## Context
+When non-existent paths or non-DICOM files are passed as arguments, the app crashes with raw library errors (e.g., dicom crate parse errors or OS file-not-found errors). We need early validation with clear, user-friendly error messages and a clean exit (via `std::process::exit(1)` or early return with `eprintln!`).
+
+## Approach
+Add a `validate_path` helper in `src/main.rs` that checks each path argument before any DICOM loading occurs. This keeps validation co-located with argument parsing and avoids changes deeper in the stack.
+
+### Validation checks (in order)
+1. **Path exists** — `path.exists()` → error: `"Error: file not found: {path}"`
+2. **Path is a file** (not a directory) — `path.is_file()` → error: `"Error: not a file: {path}"`
+3. **File has DICOM content** — read first 132 bytes and check for `DICM` magic at offset 128 → error: `"Error: not a valid DICOM file: {path}"`
+
+### Files to modify
+
+- **`src/main.rs`** — Add `validate_path()` function and call it on all path args before loading:
+  - Single file mode: validate `file` (line 73)
+  - Diff mode: validate both `baseline_path` and `modified_path` (lines 40-41)
+
+### Implementation
+
+```rust
+fn validate_path(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    if !path.exists() {
+        return Err(format!("file not found: {}", path.display()).into());
+    }
+    if !path.is_file() {
+        return Err(format!("not a file: {}", path.display()).into());
+    }
+    let mut file = std::fs::File::open(path)?;
+    let mut buf = [0u8; 132];
+    use std::io::Read;
+    if file.read(&mut buf)? < 132 || &buf[128..132] != b"DICM" {
+        return Err(format!("not a valid DICOM file: {}", path.display()).into());
+    }
+    Ok(())
+}
+```
+
+Call sites in `main()`:
+- Diff mode (after lines 40-41): `validate_path(baseline_path)?; validate_path(modified_path)?;`
+- Single file mode (after line 71): `validate_path(&file)?;`
+
+### Tests to add
+
+In `tests/integration_tests.rs`:
+- `test_load_non_dicom_file_error` — create a plain text fixture, assert `load_dicom_file` errors (existing behavior still works)
+
+In `tests/diff_tests.rs`:
+- `test_diff_with_non_dicom_file_returns_error` — pass a non-DICOM file to `compare_dicom_files`
+
+No new test files needed; these extend existing test modules.
+
+## Verification
+1. `cargo build` — compiles without errors
+2. `cargo test` — all existing + new tests pass
+3. Manual: `cargo run -- /tmp/nonexistent` → prints "Error: file not found: /tmp/nonexistent" and exits 1
+4. Manual: `echo "hello" > /tmp/test.txt && cargo run -- /tmp/test.txt` → prints "Error: not a valid DICOM file: /tmp/test.txt" and exits 1
+5. Manual: `cargo run -- /tmp` → prints "Error: not a file: /tmp" and exits 1
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/paul.guilloux/.REDACTED.jsonl
