@@ -9,7 +9,7 @@ use std::path::PathBuf;
 pub struct App {
     pub tags: Vec<DicomTag>,
     pub all_tags: Vec<DicomTag>,
-    pub(super) filtered_tags: Option<Vec<DicomTag>>,
+    pub filtered_tags: Option<Vec<DicomTag>>,
     pub table_state: TableState,
     pub should_quit: bool,
     pub file_name: String,

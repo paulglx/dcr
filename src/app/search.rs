@@ -3,7 +3,7 @@ use crate::dicom::DicomTag;
 use super::App;
 
 impl App {
-    pub(super) fn filter_tags(&mut self) {
+    pub fn filter_tags(&mut self) {
         if self.search_query.is_empty() {
             self.filtered_tags = None;
             self.rebuild_visible_tags();
@@ -24,7 +24,7 @@ impl App {
         self.reset_selection();
     }
 
-    pub(super) fn reset_selection(&mut self) {
+    pub fn reset_selection(&mut self) {
         if self.tags.is_empty() {
             self.table_state.select(None);
         } else {

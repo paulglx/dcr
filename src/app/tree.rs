@@ -35,7 +35,7 @@ impl App {
         }
     }
 
-    pub(super) fn expand_selected(&mut self) {
+    pub fn expand_selected(&mut self) {
         if let Some(selected_idx) = self.table_state.selected() {
             if selected_idx < self.tags.len() {
                 let selected_tag = &self.tags[selected_idx];
@@ -48,7 +48,7 @@ impl App {
         }
     }
 
-    pub(super) fn collapse_parent(&mut self) {
+    pub fn collapse_parent(&mut self) {
         if let Some(selected_idx) = self.table_state.selected() {
             if selected_idx < self.tags.len() {
                 let current_depth = self.tags[selected_idx].depth;

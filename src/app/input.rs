@@ -87,7 +87,7 @@ impl App {
         Ok(())
     }
 
-    pub(super) fn scroll_down(&mut self, amount: usize) {
+    pub fn scroll_down(&mut self, amount: usize) {
         if self.tags.is_empty() {
             return;
         }
@@ -98,7 +98,7 @@ impl App {
         self.table_state.select(Some(new_index));
     }
 
-    pub(super) fn scroll_up(&mut self, amount: usize) {
+    pub fn scroll_up(&mut self, amount: usize) {
         if self.tags.is_empty() {
             return;
         }

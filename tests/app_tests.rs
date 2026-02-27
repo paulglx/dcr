@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use dcr::app::App;
 use dcr::dicom::DicomTag;
 use dcr::validation::{SopClass, ValidationResult};
@@ -245,4 +247,203 @@ fn test_build_visible_tags_multiple_sequences() {
     assert_eq!(app.tags[0].tag, "(0008,1110)");
     assert_eq!(app.tags[1].tag, "(0008,0100)");
     assert_eq!(app.tags[2].tag, "(0040,0260)");
+}
+
+// --- Scroll tests ---
+
+fn create_app_with_n_tags(n: usize) -> App {
+    let tags: Vec<DicomTag> = (0..n)
+        .map(|i| create_test_tag(&format!("({:04X},0000)", i), &format!("Tag{i}"), 0, false, Vec::new()))
+        .collect();
+    App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct)
+}
+
+#[test]
+fn scroll_down_from_zero() {
+    let mut app = create_app_with_n_tags(5);
+    assert_eq!(app.table_state.selected(), Some(0));
+    app.scroll_down(1);
+    assert_eq!(app.table_state.selected(), Some(1));
+}
+
+#[test]
+fn scroll_down_clamps_to_last() {
+    let mut app = create_app_with_n_tags(5);
+    app.scroll_down(100);
+    assert_eq!(app.table_state.selected(), Some(4));
+}
+
+#[test]
+fn scroll_down_on_empty_is_noop() {
+    let mut app = create_app_with_n_tags(0);
+    app.scroll_down(1);
+    assert_eq!(app.table_state.selected(), None);
+}
+
+#[test]
+fn scroll_up_from_middle() {
+    let mut app = create_app_with_n_tags(5);
+    app.table_state.select(Some(2));
+    app.scroll_up(1);
+    assert_eq!(app.table_state.selected(), Some(1));
+}
+
+#[test]
+fn scroll_up_at_zero_stays_at_zero() {
+    let mut app = create_app_with_n_tags(5);
+    assert_eq!(app.table_state.selected(), Some(0));
+    app.scroll_up(1);
+    assert_eq!(app.table_state.selected(), Some(0));
+}
+
+#[test]
+fn scroll_up_on_empty_is_noop() {
+    let mut app = create_app_with_n_tags(0);
+    app.scroll_up(1);
+    assert_eq!(app.table_state.selected(), None);
+}
+
+// --- Search tests ---
+
+#[test]
+fn filter_tags_empty_query_shows_all() {
+    let mut app = create_app_with_n_tags(3);
+    app.search_query = String::new();
+    app.filter_tags();
+    assert_eq!(app.tags.len(), 3);
+    assert!(app.filtered_tags.is_none());
+}
+
+#[test]
+fn filter_tags_matching_tag_string() {
+    let tags = vec![
+        create_test_tag("(0010,0010)", "PatientName", 0, false, Vec::new()),
+        create_test_tag("(0010,0020)", "PatientID", 0, false, Vec::new()),
+        create_test_tag("(0008,0060)", "Modality", 0, false, Vec::new()),
+    ];
+    let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
+    app.search_query = "0010".to_string();
+    app.filter_tags();
+    assert_eq!(app.tags.len(), 2);
+}
+
+#[test]
+fn filter_tags_matching_name_case_insensitive() {
+    let tags = vec![
+        create_test_tag("(0010,0010)", "PatientName", 0, false, Vec::new()),
+        create_test_tag("(0008,0060)", "Modality", 0, false, Vec::new()),
+    ];
+    let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
+    app.search_query = "modality".to_string();
+    app.filter_tags();
+    assert_eq!(app.tags.len(), 1);
+    assert_eq!(app.tags[0].name, "Modality");
+}
+
+#[test]
+fn filter_tags_no_matches() {
+    let mut app = create_app_with_n_tags(3);
+    app.search_query = "zzzzzzz".to_string();
+    app.filter_tags();
+    assert_eq!(app.tags.len(), 0);
+}
+
+#[test]
+fn reset_selection_with_tags_selects_zero() {
+    let mut app = create_app_with_n_tags(3);
+    app.table_state.select(Some(2));
+    app.reset_selection();
+    assert_eq!(app.table_state.selected(), Some(0));
+}
+
+#[test]
+fn reset_selection_empty_selects_none() {
+    let mut app = create_app_with_n_tags(0);
+    app.reset_selection();
+    assert_eq!(app.table_state.selected(), None);
+}
+
+// --- Tree tests ---
+
+#[test]
+fn expand_selected_on_collapsed_expandable() {
+    let children = vec![
+        create_test_tag("(0008,0100)", "CodeValue", 1, false, Vec::new()),
+    ];
+    let tags = vec![
+        create_test_tag("(0008,1110)", "ReferencedStudy", 0, true, children),
+    ];
+    let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
+    assert_eq!(app.tags.len(), 1);
+
+    app.expand_selected();
+
+    assert_eq!(app.tags.len(), 2);
+    assert_eq!(app.tags[1].tag, "(0008,0100)");
+}
+
+#[test]
+fn expand_selected_on_non_expandable_is_noop() {
+    let tags = vec![
+        create_test_tag("(0010,0010)", "PatientName", 0, false, Vec::new()),
+    ];
+    let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
+    app.expand_selected();
+    assert_eq!(app.tags.len(), 1);
+}
+
+#[test]
+fn collapse_parent_on_child_selects_parent() {
+    let children = vec![
+        create_test_tag("(0008,0100)", "CodeValue", 1, false, Vec::new()),
+    ];
+    let mut parent = create_test_tag("(0008,1110)", "ReferencedStudy", 0, true, children);
+    parent.is_expanded = true;
+
+    let tags = vec![parent];
+    let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
+    assert_eq!(app.tags.len(), 2);
+
+    app.table_state.select(Some(1));
+    app.collapse_parent();
+
+    assert_eq!(app.tags.len(), 1);
+    assert_eq!(app.table_state.selected(), Some(0));
+}
+
+#[test]
+fn collapse_parent_on_root_is_noop() {
+    let tags = vec![
+        create_test_tag("(0010,0010)", "PatientName", 0, false, Vec::new()),
+    ];
+    let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
+    app.collapse_parent();
+    assert_eq!(app.tags.len(), 1);
+    assert_eq!(app.table_state.selected(), Some(0));
+}
+
+// --- new_with_diff constructor tests ---
+
+#[test]
+fn new_with_diff_stores_fields_correctly() {
+    let tags = vec![
+        create_test_tag("(0010,0010)", "PatientName", 0, false, Vec::new()),
+    ];
+    let app = App::new_with_diff(
+        tags,
+        "baseline.dcm".to_string(),
+        Some("modified.dcm".to_string()),
+        ValidationResult::Valid,
+        SopClass::Ct,
+        true,
+        Some(PathBuf::from("/tmp/test.dcm")),
+        None,
+    );
+
+    assert!(app.diff_mode);
+    assert_eq!(app.modified_name, Some("modified.dcm".to_string()));
+    assert_eq!(app.dicom_file_path, Some(PathBuf::from("/tmp/test.dcm")));
+    assert_eq!(app.file_name, "baseline.dcm");
+    assert_eq!(app.tags.len(), 1);
+    assert_eq!(app.table_state.selected(), Some(0));
 }
