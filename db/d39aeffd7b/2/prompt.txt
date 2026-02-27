@@ -1,0 +1,30 @@
+Implement the following plan:
+
+# Add File Meta Information (group 0002) tags to the viewer
+
+## Context
+
+The DICOM viewer currently only displays dataset tags (group 0008+). File Meta Information tags (group 0002) like `MediaStorageSOPInstanceUID` `(0002,0003)` and `TransferSyntaxUID` `(0002,0010)` are stored separately by the `dicom` crate in a `FileMetaTable` and are not iterated by the default `FileDicomObject` iterator.
+
+## Changes
+
+### `src/dicom.rs`
+
+In `extract_tags` (line 118), prepend meta information elements before dataset elements:
+
+1. Call `obj.meta().to_element_iter()` to get group 0002 elements
+2. For each meta element, extract tag/name/VR/value the same way as dataset elements
+3. The meta elements use `DataElement<EmptyObject, [u8; 0]>` — the value formatting needs to handle this type (use `.to_str()` or format the primitive value)
+4. Prepend these tags to the `tags` vec before returning
+
+The meta iterator yields standard `DataElement` items with `.tag()`, `.vr()`, and `.value()` — same pattern as the dataset iteration, just a slightly different generic type. We'll need a small helper or inline logic to format the meta element values since they use `[u8; 0]` instead of `InMemDicomObject` for the pixel data type parameter.
+
+## Verification
+
+1. Run `cargo build` to confirm it compiles
+2. Run `cargo test` to confirm existing tests pass
+3. Run the app on a DICOM file and verify group 0002 tags appear at the top of the list
+4. Verify diff mode still works (both files will now include meta tags)
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/paul.guilloux/.REDACTED.jsonl
