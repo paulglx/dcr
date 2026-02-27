@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "dbd39aeffd7b",
+  "session_id": "7cb799ff-51f6-41de-a605-dde7cac75d09",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-27T15:16:10.348602Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".claude/settings.local.json"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 28061,
+    "cache_read_tokens": 210075,
+    "output_tokens": 3625,
+    "api_call_count": 7
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-27T15:16:10.261523Z",
+    "agent_lines": 0,
+    "human_added": 155,
+    "human_modified": 9,
+    "human_removed": 0,
+    "total_committed": 164,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-paul-guilloux-Documents-dcr/7cb799ff-51f6-41de-a605-dde7cac75d09.jsonl"
+}
