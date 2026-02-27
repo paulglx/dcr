@@ -1,0 +1,100 @@
+Implement the following plan:
+
+# SOLID Reorganization Plan for dcr
+
+## Context
+
+The dcr codebase (~1400 lines of Rust) currently has 4 source files (`app.rs`, `dicom.rs`, `ui.rs`, `validation.rs`) with key SOLID violations: `App` is a god object (18 fields, handles state/events/navigation/filtering/image decoding), `dicom.rs` mixes file I/O with datetime parsing and diff logic, and `validation.rs` couples validation logic to file I/O. The goal is to reorganize the file structure for better code colocation and separation of concerns, without over-engineering for the project's size.
+
+## Proposed Structure
+
+```
+src/
+  main.rs              (updated to use validation DIP fix)
+  lib.rs               (unchanged: pub mod app, dicom, validation)
+  ui.rs                (unchanged - already single-responsibility)
+
+  dicom/
+    mod.rs             - re-exports (preserves dcr::dicom::* paths)
+    tag.rs             - DicomTag struct, DiffStatus enum, is_private()
+    loader.rs          - load_dicom_file, extract_tags, extract_sequence_items, format_value, truncate_value
+    diff.rs            - compare_dicom_files
+    datetime.rs        - parse_dicom_datetime_delta_ms, parse_tm, parse_dt, first_value
+
+  validation/
+    mod.rs             - re-exports (preserves dcr::validation::* paths)
+    types.rs           - SopClass, ValidationResult enums
+    rules.rs           - Type 1 tag constant arrays (SOP_COMMON, GENERAL_STUDY, etc.)
+    validator.rs       - validate_type1_fields, get_sop_class, + new _from_obj variants, is_tag_present
+
+  app/
+    mod.rs             - re-exports (preserves dcr::app::App path)
+    state.rs           - App struct definition + App::new + App::new_with_diff constructors
+    tree.rs            - impl App: tree navigation (build_visible, expand, collapse, path-finding)
+    input.rs           - impl App: handle_events, scroll_down, scroll_up
+    search.rs          - impl App: filter_tags, reset_selection
+    preview.rs         - impl App: toggle_preview, decode_preview
+```
+
+All public import paths (`dcr::dicom::DicomTag`, `dcr::app::App`, `dcr::validation::SopClass`, etc.) remain unchanged via re-exports in each `mod.rs`.
+
+## Key Changes
+
+### 1. Add `App::new` convenience constructor
+Delegates to `new_with_diff` with defaults. Fixes the currently broken `tests/app_tests.rs`.
+
+### 2. Split `dicom.rs` into `dicom/` module
+Pure code relocation. Each file gets one responsibility:
+- `tag.rs`: data types
+- `loader.rs`: file I/O and tag extraction
+- `diff.rs`: two-file comparison
+- `datetime.rs`: VR-specific datetime delta computation
+
+### 3. Split `validation.rs` into `validation/` module + DIP fix
+- Separate types, rules, and validation logic
+- Add `validate_type1_fields_from_obj(&FileDicomObject)` and `get_sop_class_from_obj(&FileDicomObject)` that accept parsed objects
+- Keep path-based wrappers for backward compatibility
+
+### 4. Split `app.rs` into `app/` module
+Uses Rust's ability to have `impl` blocks in separate files within the same module:
+- `state.rs`: struct + constructors
+- `tree.rs`: hierarchy navigation
+- `input.rs`: event handling
+- `search.rs`: filtering
+- `preview.rs`: image decoding
+
+### 5. Optimize `main.rs`
+Open DICOM file once instead of 3 times (load + validate + get_sop_class), using the new `_from_obj` functions.
+
+## What stays unchanged
+
+- **`ui.rs`**: Already single-responsibility (rendering). Not worth splitting.
+- **`DicomTag` struct**: Stays as one struct. `depth`/`is_expanded`/`children` are domain modeling (DICOM sequences are hierarchical), not pure UI state. Moved to own file for isolation.
+- **App struct fields**: Not split into sub-structs. Rust's borrow checker makes this painful, and the benefit is minimal at this scale.
+- **SOP class mapping**: Hardcoded CT/MR is fine — DICOM classes change rarely.
+
+## Implementation Order
+
+Each step keeps all tests passing:
+
+1. **Add `App::new`** in `src/app.rs` — fixes broken `app_tests.rs`
+2. **Extract `dicom/`** — create submodule, move code, re-export
+3. **Extract `validation/`** — create submodule, move code, re-export
+4. **Apply validation DIP fix** — add `_from_obj` functions
+5. **Extract `app/`** — create submodule, split impl blocks
+6. **Optimize `main.rs`** — open file once, use `_from_obj` variants
+
+## Verification
+
+After each step:
+- `cargo build` compiles
+- `cargo test` passes all tests (including the previously broken `app_tests.rs` after step 1)
+
+After completion:
+- Run `cargo test` — all 30+ tests pass
+- Run `cargo clippy` — no new warnings
+- Run the binary: `cargo run -- tests/fixtures/dicom/ct-tap.dcm` — TUI works
+- Run diff mode: `cargo run -- -d tests/fixtures/dicom/ct-tap.dcm tests/fixtures/dicom/ct-tap-with-missing-data.dcm` — diff works
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/paul.guilloux/.REDACTED.jsonl
