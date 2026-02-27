@@ -6,10 +6,23 @@
   "checkpoints_count": 1,
   "files_touched": [
     ".claude/settings.local.json",
+    "src/app.rs",
     "src/app/input.rs",
+    "src/app/mod.rs",
+    "src/app/preview.rs",
     "src/app/search.rs",
     "src/app/state.rs",
     "src/app/tree.rs",
+    "src/dicom/datetime.rs",
+    "src/dicom/diff.rs",
+    "src/dicom/loader.rs",
+    "src/dicom/mod.rs",
+    "src/dicom/tag.rs",
+    "src/main.rs",
+    "src/validation/mod.rs",
+    "src/validation/rules.rs",
+    "src/validation/types.rs",
+    "src/validation/validator.rs",
     "tests/app_tests.rs",
     "tests/datetime_tests.rs",
     "tests/diff_tests.rs"
@@ -21,13 +34,20 @@
       "context": "/08/8cd0bbaae3/0/context.md",
       "content_hash": "/08/8cd0bbaae3/0/content_hash.txt",
       "prompt": "/08/8cd0bbaae3/0/prompt.txt"
+    },
+    {
+      "metadata": "/08/8cd0bbaae3/1/metadata.json",
+      "transcript": "/08/8cd0bbaae3/1/full.jsonl",
+      "context": "/08/8cd0bbaae3/1/context.md",
+      "content_hash": "/08/8cd0bbaae3/1/content_hash.txt",
+      "prompt": "/08/8cd0bbaae3/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 27,
-    "cache_creation_tokens": 26338,
-    "cache_read_tokens": 631667,
-    "output_tokens": 7268,
-    "api_call_count": 18
+    "input_tokens": 43,
+    "cache_creation_tokens": 69634,
+    "cache_read_tokens": 941865,
+    "output_tokens": 9724,
+    "api_call_count": 25
   }
 }
