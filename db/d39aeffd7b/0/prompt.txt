@@ -1,0 +1,92 @@
+Implement the following plan:
+
+# DICOM Pixel Data Preview
+
+## Context
+
+dcr is a ratatui TUI for inspecting DICOM tags. It currently has no image rendering. The goal is to add a toggleable preview pane (`p` key) that displays the DICOM image using the Kitty graphics protocol, with a fallback message if the terminal doesn't support Kitty.
+
+## Dependencies to add
+
+```toml
+dicom-pixeldata = { version = "0.8", features = ["image"] }
+dicom-transfer-syntax-registry = { version = "0.8", features = ["native"] }
+ratatui-image = "3.0.0"
+image = "0.25"
+```
+
+- `dicom-pixeldata` decodes pixel data → `image::DynamicImage`, handles windowing via Window Center/Width from file metadata automatically
+- `dicom-transfer-syntax-registry` with `native` enables pure-Rust JPEG + RLE decoders
+- `ratatui-image` 3.0.0 is compatible with ratatui 0.29, provides `Picker` for terminal protocol detection and `StatefulImage` widget
+- `image` is the shared type between both crates
+
+## Implementation
+
+### 1. `Cargo.toml` — add dependencies
+
+### 2. `main.rs` — Picker init + file path threading
+
+- Call `Picker::from_query_stdio()` **before** `enable_raw_mode()` / `EnterAlternateScreen` (it queries the terminal via stdio)
+- Capture the DICOM file path (`PathBuf`) to pass to App for lazy decoding
+- In diff mode, use the baseline file path
+- Pass both `picker` and `dicom_file_path` into `App::new_with_diff`
+
+### 3. `app.rs` — state + key handler + lazy decode
+
+New fields on `App`:
+- `show_preview: bool`
+- `preview_image: Option<StatefulProtocol>` — cached decoded image
+- `preview_error: Option<String>` — error message if decoding fails
+- `dicom_file_path: Option<PathBuf>` — for lazy loading
+- `picker: Option<Picker>` — protocol picker
+
+Key handler: `'p'` toggles `show_preview`. On first toggle, lazily decode:
+1. Check `picker` exists, otherwise set error "Preview requires a Kitty-compatible terminal"
+2. Open the DICOM file with `dicom::object::open_file`
+3. Call `obj.decode_pixel_data()` then `.to_dynamic_image(0)` (frame 0, default windowing from file metadata)
+4. Wrap in `picker.new_resize_protocol(dyn_img)` → cache as `preview_image`
+5. On decode error, store message in `preview_error`
+
+Kitty-only enforcement: after creating the Picker, check if the detected protocol is Kitty. If not, treat it as unsupported and show the fallback message.
+
+### 4. `ui.rs` — preview pane layout + rendering
+
+When `show_preview` is true:
+- Split the full area horizontally: `[Percentage(50), Percentage(50)]`
+- Left half: existing tag table + validation pane
+- Right half: preview pane
+
+`render_preview_pane`:
+- If `preview_error` is set → show error text in a bordered block
+- If `preview_image` is set → render `StatefulImage` widget inside a bordered block
+- Otherwise → show "Decoding..." placeholder
+
+Update help bar to include `p: Preview`.
+
+### Files to modify
+- `Cargo.toml`
+- `src/main.rs`
+- `src/app.rs`
+- `src/ui.rs`
+
+## Verification
+- `cargo build` compiles
+- Open a DICOM with pixel data (test fixtures in `tests/fixtures/`), press `p`, image appears on right half
+- Open a DICOM without pixel data, press `p`, error message shown
+- Run in a non-Kitty terminal, press `p`, fallback message shown
+- Press `p` again to toggle off, full-width tag table restored
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/paul.guilloux/.REDACTED.jsonl
+
+---
+
+Center the image in its pane. Make the pane enabled by default.
+
+---
+
+It's not centered
+
+---
+
+Still not centered. let's forget this constraint. remove everything done to center it, let's use the default placement
