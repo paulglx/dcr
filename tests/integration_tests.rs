@@ -10,6 +10,13 @@ fn fixture_path(filename: &str) -> PathBuf {
         .join(filename)
 }
 
+fn non_dicom_fixture_path(filename: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(filename)
+}
+
 #[test]
 fn test_load_valid_ct_file() {
     let path = fixture_path("ct-tap.dcm");
@@ -400,4 +407,11 @@ fn test_is_private_on_incomplete_file() {
             }
         }
     }
+}
+
+#[test]
+fn test_load_non_dicom_file_error() {
+    let path = non_dicom_fixture_path("not-a-dicom.txt");
+    let result = load_dicom_file(&path);
+    assert!(result.is_err(), "Should return error for non-DICOM file");
 }

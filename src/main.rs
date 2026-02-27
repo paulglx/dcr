@@ -12,7 +12,7 @@ use crossterm::{
 };
 use ratatui::prelude::*;
 use ratatui_image::picker::Picker;
-use std::{io, path::PathBuf};
+use std::{io, path::Path, path::PathBuf};
 
 /// DICOM TUI Viewer - View DICOM file tags in a terminal interface
 #[derive(Parser, Debug)]
@@ -27,6 +27,22 @@ struct Args {
     file: Option<PathBuf>,
 }
 
+fn validate_path(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if !path.exists() {
+        return Err(format!("file not found: {}", path.display()).into());
+    }
+    if !path.is_file() {
+        return Err(format!("not a file: {}", path.display()).into());
+    }
+    let mut file = std::fs::File::open(path)?;
+    let mut buf = [0u8; 132];
+    use std::io::Read;
+    if file.read(&mut buf)? < 132 || &buf[128..132] != b"DICM" {
+        return Err(format!("not a valid DICOM file: {}", path.display()).into());
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
@@ -39,6 +55,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let baseline_path = &diff_files[0];
             let modified_path = &diff_files[1];
+            validate_path(baseline_path)?;
+            validate_path(modified_path)?;
 
             let tags = dicom::compare_dicom_files(baseline_path, modified_path)?;
 
@@ -70,6 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .file
                 .ok_or("Either --diff with two files or a single file argument is required")?;
 
+            validate_path(&file)?;
             let obj = ::dicom::object::open_file(&file)?;
             let tags = dicom::extract_tags(&obj);
             let sop_class = validation::get_sop_class_from_obj(&obj);

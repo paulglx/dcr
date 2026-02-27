@@ -9,6 +9,13 @@ fn fixture_path(name: &str) -> PathBuf {
         .join(name)
 }
 
+fn non_dicom_fixture_path(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(name)
+}
+
 #[test]
 fn compare_returns_ok_with_non_empty_results() {
     let result = compare_dicom_files(fixture_path("ct-tap.dcm"), fixture_path("ct-tap-with-missing-data.dcm"));
@@ -90,4 +97,13 @@ fn nonexistent_file_returns_error() {
         fixture_path("ct-tap.dcm"),
     );
     assert!(result.is_err());
+}
+
+#[test]
+fn test_diff_with_non_dicom_file_returns_error() {
+    let result = compare_dicom_files(
+        non_dicom_fixture_path("not-a-dicom.txt"),
+        fixture_path("ct-tap.dcm"),
+    );
+    assert!(result.is_err(), "Should return error when comparing a non-DICOM file");
 }
