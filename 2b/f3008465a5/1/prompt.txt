@@ -1,0 +1,114 @@
+Let's add a file explorer as a left pane in this ratatui app. Use https://github.com/tatounee/ratatui-explorer . The file explorer opens where dcr was opened, and allows navigating up and down in folders as well as highlighting a file. If the file is dicom, it shows all available information in a middle panel + preview in a right panel. If the file isn't dicom it shows nothing
+
+---
+
+Debounce the image preview (100ms)
+
+---
+
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   - **Request 1**: Add a file explorer as a left pane in the ratatui DICOM viewer app using the `ratatui-explorer` crate. The explorer opens at the current working directory, allows navigating folders, and when a DICOM file is highlighted it shows tag info in a middle panel + preview in a right panel. Non-DICOM files show nothing.
+   - **Request 2**: Debounce the image preview with a 100ms delay to avoid decoding on every cursor movement during rapid navigation.
+   - User clarifications: Explorer is the default mode (no args needed), 3-column layout (25%|40%|35%), DICOM info loads on cursor move (not Enter).
+
+2. Key Technical Concepts:
+   - `ratatui-explorer` v0.2.1 crate for file browsing widget (compatible with ratatui 0.29)
+   - `ratatui` v0.29 with `unstable-widget-ref` feature (required by ratatui-explorer's `widget()` returning `impl WidgetRef`)
+   - `FileExplorer::new()` returns `Result<FileExplorer>`, `current()` returns `&File`, `handle()` takes `impl Into<Input>` and returns `Result<()>`
+   - Focus management pattern: `AppMode` (Explorer vs Direct) and `Focus` (Explorer vs TagTable) enums
+   - `frame.render_widget_ref()` for rendering the explorer widget
+   - Manual crossterm KeyCode to `ratatui_explorer::Input` conversion (since crossterm feature was not needed as a separate dep in v0.2.1)
+   - Preview debounce using `Instant` timestamps checked each event loop tick
+   - The event loop polls every 100ms via `event::poll(Duration::from_millis(100))`
+
+3. Files and Code Sections:
+   - **`Cargo.toml`**
+     - Added ratatui-explorer dependency and unstable-widget-ref feature
+     ```toml
+     ratatui = { version = "0.29", features = ["unstable-widget-ref"] }
+     ratatui-explorer = "0.2"
+     ```
+
+   - **`src/app/state.rs`** — Core state management, heavily rewritten
+     - Added `AppMode` and `Focus` enums, new fields on `App`, three constructors, DICOM loading/clearing methods, debounce logic
+     ```rust
+     use std::time::Instant;
+
+     #[derive(PartialEq)]
+     pub enum AppMode { Explorer, Direct }
+
+     #[derive(PartialEq)]
+     pub enum Focus { Explorer, TagTable }
+     ```
+     - New fields on App: `mode: AppMode`, `focus: Focus`, `explorer: Option<FileExplorer>`, `selected_path: Option<PathBuf>`, `preview_pending_since: Option<Instant>`
+     - `new_explorer(picker)` — creates FileExplorer at cwd, empty DICOM state
+     - `load_dicom_file(&mut self, path: &Path)` — skips if same path, opens DICOM, extracts tags/validation/sop_class, schedules debounced preview
+     - `clear_dicom_state()` / `clear_dicom_display()` — resets all DICOM fields, cancels pending preview, resets focus to Explorer
+     - `has_dicom_loaded()` — returns `!self.all_tags.is_empty()`
+     - `tick_preview_debounce()` — checks if 100ms elapsed since `preview_pending_since`, if so calls `decode_preview()`
+
+   - **`src/app/input.rs`** — Input handling, fully rewritten
+     - `key_to_explorer_input(KeyCode) -> Input` maps j/k/h/l/arrows/Enter/Home/End/PageUp/PageDown
+     - `handle_events()` branches on `self.mode` (Direct vs Explorer), calls `tick_preview_debounce()` at end
+     - `handle_direct_key()` — identical to original behavior
+     - `handle_explorer_key()` — branches on `self.focus`
+     - `handle_explorer_focus_key()` — q/Esc quit, Tab switches to TagTable if DICOM loaded, nav keys forwarded to explorer, then `check_explorer_selection()`
+     - `handle_tagtable_focus_key()` — Tab/Esc back to explorer, standard tag navigation, search mode
+     - `check_explorer_selection()` — gets current path from explorer, calls `load_dicom_file()` if file or `clear_dicom_state()` otherwise
+
+   - **`src/ui.rs`** — UI rendering, heavily refactored
+     - `render()` dispatches to `render_direct()` or `render_explorer()` based on `app.mode`
+     - `render_direct()` — original layout unchanged
+     - `render_explorer()` — 3-column layout when DICOM+preview, 2-column when DICOM only, explorer+empty panel when no DICOM
+     - `render_tag_table(frame, area, app, in_explorer: bool)` — extracted table rendering, focus-aware border colors
+     - `render_explorer_help()` / `render_direct_help()` — contextual help bars
+     - Explorer pane rendered with `frame.render_widget_ref(explorer.widget(), inner)` inside a bordered block showing cwd
+     - Focus indicator: Cyan border for focused pane, DarkGray for unfocused
+
+   - **`src/main.rs`** — CLI changes
+     - Removed `required_unless_present = "diff"` from file arg
+     - Three branches: `--diff` → `App::new_with_diff()`, file arg → `App::new_with_diff()`, no args → `App::new_explorer(picker)`
+
+   - **`src/app/mod.rs`** — Changed `mod state` to `pub mod state` for UI access to AppMode/Focus
+
+   - **`src/app/preview.rs`** — Not modified. `toggle_preview()` and `decode_preview()` remain as-is. Direct mode still decodes immediately.
+
+4. Errors and fixes:
+   - **`e.current()` type mismatch**: `FileExplorer::current()` returns `&File` not `Option<&File>`. Fixed by changing `.and_then(|e| e.current())` to `.map(|e| e.current().path().to_path_buf())`.
+   - **Private module error**: `src/ui.rs` couldn't access `crate::app::state::{AppMode, Focus}` because `state` was private. Fixed by changing `mod state` to `pub mod state` in `src/app/mod.rs`.
+   - **Unused Result warning**: `explorer.handle(input)` returns `Result<()>` which must be used. Fixed with `let _ = explorer.handle(input)`.
+   - Pre-existing warnings (not introduced by changes): unused `load_dicom_file` import in `dicom/mod.rs`, unused `App::new` function.
+
+5. Problem Solving:
+   - **Version compatibility**: Investigated ratatui-explorer versions via crates.io API. v0.3.0 requires ratatui ^0.30 (incompatible), v0.2.1 requires ratatui ^0.29 (compatible) with no crossterm version conflict. v0.1.4 also compatible but older.
+   - **WidgetRef requirement**: ratatui-explorer's `widget()` returns `impl WidgetRef`, requiring the `unstable-widget-ref` feature flag on ratatui 0.29.
+   - **Debounce design**: Used `Instant` timestamps instead of threads/channels for simplicity. The existing 100ms event poll interval naturally provides the tick mechanism. Only explorer mode navigation is debounced; direct mode and explicit toggle still decode immediately.
+
+6. All user messages:
+   - "Let's add a file explorer as a left pane in this ratatui app. Use https://github.com/tatounee/ratatui-explorer . The file explorer opens where dcr was opened, and allows navigating up and down in folders as well as highlighting a file. If the file is dicom, it shows all available information in a middle panel + preview in a right panel. If the file isn't dicom it shows nothing"
+   - User answered clarification questions: Explorer is default (no args), 3 columns layout, Load on cursor move
+   - "Debounce the image preview (100ms)"
+
+7. Pending Tasks:
+   - None explicitly requested. Both tasks (file explorer and debounce) are implemented, building, and all 83 tests pass.
+
+8. Current Work:
+   The most recent work was implementing the 100ms debounce for image preview decoding during explorer navigation. This was completed by:
+   - Adding `preview_pending_since: Option<Instant>` to `App`
+   - In `load_dicom_file()`, replacing `self.decode_preview()` with `self.preview_pending_since = Some(Instant::now())`
+   - Adding `tick_preview_debounce()` that fires `decode_preview()` after 100ms idle
+   - Calling `tick_preview_debounce()` at the end of every `handle_events()` iteration
+   - Clearing the timer in `clear_dicom_display()`
+   - Build succeeds, all 83 tests pass.
+
+9. Optional Next Step:
+   No explicit next step requested. Both features are implemented and verified.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/paul.guilloux/.REDACTED.jsonl
+
+---
+
+We need a way to focus the dicom tag list: enter key on a dicom file. We need a visual feedback to show which panel is focused

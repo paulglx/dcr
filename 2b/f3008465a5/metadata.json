@@ -3,9 +3,14 @@
   "checkpoint_id": "2bf3008465a5",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 1,
+  "checkpoints_count": 4,
   "files_touched": [
-    "src/app/state.rs"
+    "Cargo.toml",
+    "src/app/input.rs",
+    "src/app/mod.rs",
+    "src/app/state.rs",
+    "src/main.rs",
+    "src/ui.rs"
   ],
   "sessions": [
     {
@@ -14,13 +19,20 @@
       "context": "/2b/f3008465a5/0/context.md",
       "content_hash": "/2b/f3008465a5/0/content_hash.txt",
       "prompt": "/2b/f3008465a5/0/prompt.txt"
+    },
+    {
+      "metadata": "/2b/f3008465a5/1/metadata.json",
+      "transcript": "/2b/f3008465a5/1/full.jsonl",
+      "context": "/2b/f3008465a5/1/context.md",
+      "content_hash": "/2b/f3008465a5/1/content_hash.txt",
+      "prompt": "/2b/f3008465a5/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 19,
-    "cache_creation_tokens": 23651,
-    "cache_read_tokens": 404730,
-    "output_tokens": 3029,
-    "api_call_count": 15
+    "input_tokens": 102,
+    "cache_creation_tokens": 135938,
+    "cache_read_tokens": 4536607,
+    "output_tokens": 29714,
+    "api_call_count": 82
   }
 }
