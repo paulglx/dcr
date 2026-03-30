@@ -60,29 +60,24 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
     let full_area = frame.area();
     let has_dicom = app.has_dicom_loaded();
 
-    let columns = if has_dicom && app.show_preview {
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(25),
-                Constraint::Percentage(40),
-                Constraint::Percentage(35),
-            ])
-            .split(full_area)
-    } else if has_dicom {
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
-            .split(full_area)
-    } else {
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
-            .split(full_area)
-    };
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
+        .split(full_area);
 
-    let explorer_area = columns[0];
+    let left_area = columns[0];
     let explorer_focused = app.focus == Focus::Explorer;
+
+    let (explorer_area, preview_area) = if has_dicom && app.show_preview {
+        let preview_height = if app.preview_image.is_some() { 14 } else { 3 };
+        let left_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Fill(1), Constraint::Length(preview_height)])
+            .split(left_area);
+        (left_chunks[0], Some(left_chunks[1]))
+    } else {
+        (left_area, None)
+    };
 
     if let Some(ref explorer) = app.explorer {
         let border_color = if explorer_focused {
@@ -118,8 +113,8 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
         render_tag_table(frame, v_chunks[0], app, true);
         render_validation_pane(frame, v_chunks[1], app);
 
-        if app.show_preview && columns.len() > 2 {
-            render_preview_pane(frame, columns[2], app);
+        if let Some(preview_area) = preview_area {
+            render_preview_pane(frame, preview_area, app);
         }
 
         render_explorer_help(frame, v_chunks[0], app);
