@@ -86,7 +86,7 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
 
     if let Some(ref explorer) = app.explorer {
         let border_color = if explorer_focused {
-            Color::Cyan
+            Color::Green
         } else {
             Color::DarkGray
         };
@@ -290,11 +290,11 @@ fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: b
     };
 
     let border_color = if in_explorer && app.focus == Focus::TagTable {
-        Color::Cyan
+        Color::Green
     } else if in_explorer {
         Color::DarkGray
     } else {
-        Color::White
+        Color::Green
     };
 
     let table = Table::new(rows, widths)
@@ -389,6 +389,7 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
 fn render_preview_pane(frame: &mut Frame, area: Rect, app: &mut App) {
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray))
         .title(" Preview ");
 
     if let Some(ref error) = app.preview_error {
