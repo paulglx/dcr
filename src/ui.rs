@@ -1,3 +1,4 @@
+use crate::app::state::{AppMode, Focus};
 use crate::app::App;
 use crate::dicom::{parse_dicom_datetime_delta_ms, DiffStatus};
 use crate::validation::{SopClass, ValidationResult};
@@ -12,6 +13,13 @@ use ratatui_image::StatefulImage;
 use similar::{ChangeTag, TextDiff};
 
 pub fn render(frame: &mut Frame, app: &mut App) {
+    match app.mode {
+        AppMode::Direct => render_direct(frame, app),
+        AppMode::Explorer => render_explorer(frame, app),
+    }
+}
+
+fn render_direct(frame: &mut Frame, app: &mut App) {
     let full_area = frame.area();
 
     let (main_area, preview_area) = if app.show_preview {
@@ -44,6 +52,93 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         render_preview_pane(frame, preview_area, app);
     }
 
+    render_tag_table(frame, area, app, false);
+    render_direct_help(frame, area, app);
+}
+
+fn render_explorer(frame: &mut Frame, app: &mut App) {
+    let full_area = frame.area();
+    let has_dicom = app.has_dicom_loaded();
+
+    let columns = if has_dicom && app.show_preview {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(25),
+                Constraint::Percentage(40),
+                Constraint::Percentage(35),
+            ])
+            .split(full_area)
+    } else if has_dicom {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
+            .split(full_area)
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
+            .split(full_area)
+    };
+
+    let explorer_area = columns[0];
+    let explorer_focused = app.focus == Focus::Explorer;
+
+    if let Some(ref explorer) = app.explorer {
+        let border_color = if explorer_focused {
+            Color::Cyan
+        } else {
+            Color::DarkGray
+        };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color))
+            .title(format!(" {} ", explorer.cwd().display()));
+
+        let inner = block.inner(explorer_area);
+        frame.render_widget(block, explorer_area);
+        frame.render_widget_ref(explorer.widget(), inner);
+    }
+
+    if has_dicom {
+        let tags_area = columns[1];
+
+        let validation_height =
+            if matches!(&app.validation_result, ValidationResult::Invalid(_)) {
+                4
+            } else {
+                3
+            };
+
+        let v_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(5), Constraint::Length(validation_height)])
+            .split(tags_area);
+
+        render_tag_table(frame, v_chunks[0], app, true);
+        render_validation_pane(frame, v_chunks[1], app);
+
+        if app.show_preview && columns.len() > 2 {
+            render_preview_pane(frame, columns[2], app);
+        }
+
+        render_explorer_help(frame, v_chunks[0], app);
+    } else {
+        let empty_area = columns[1];
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray))
+            .title(" DICOM Viewer ");
+        let paragraph = Paragraph::new("Select a DICOM file to view its tags")
+            .style(Style::default().fg(Color::DarkGray))
+            .block(block);
+        frame.render_widget(paragraph, empty_area);
+
+        render_explorer_help(frame, explorer_area, app);
+    }
+}
+
+fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: bool) {
     let mut header_cells = vec![];
     if app.diff_mode {
         header_cells.push(
@@ -94,7 +189,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             };
             let tag_display = format!("{}{}{}", indent, expand_indicator, tag.tag);
 
-            // Determine styles based on diff status
             let (row_style, value_cell) = if let Some(diff_status) = &tag.diff_status {
                 match diff_status {
                     DiffStatus::Deleted => (
@@ -106,7 +200,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                         Cell::from(tag.value.as_str()).style(Style::default().fg(Color::Green)),
                     ),
                     DiffStatus::Changed => {
-                        // Use inline diff if baseline_value is available
                         let value_cell = if let Some(ref baseline) = tag.baseline_value {
                             let mut line = render_inline_diff(baseline, &tag.value);
                             if let Some(delta_ms) =
@@ -124,7 +217,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                             }
                             Cell::from(line)
                         } else {
-                            // Fallback to simple blue text for backward compatibility
                             Cell::from(tag.value.as_str()).style(Style::default().fg(Color::Blue))
                         };
                         (Style::default(), value_cell)
@@ -135,7 +227,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
                     ),
                 }
             } else {
-                // Normal mode: use private tag styling
                 let base_style = if tag.is_private() {
                     Style::default().fg(Color::DarkGray)
                 } else {
@@ -146,7 +237,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
             let mut row_cells = vec![];
 
-            // Add diff indicator if in diff mode
             if app.diff_mode {
                 let (indicator, indicator_style) = if let Some(diff_status) = &tag.diff_status {
                     match diff_status {
@@ -199,9 +289,22 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         format!(" DICOM Viewer: {} ", app.file_name)
     };
 
+    let border_color = if in_explorer && app.focus == Focus::TagTable {
+        Color::Cyan
+    } else if in_explorer {
+        Color::DarkGray
+    } else {
+        Color::White
+    };
+
     let table = Table::new(rows, widths)
         .header(header)
-        .block(Block::default().borders(Borders::ALL).title(title))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(border_color))
+                .title(title),
+        )
         .row_highlight_style(
             Style::default()
                 .bg(Color::DarkGray)
@@ -210,8 +313,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     app.table_area = area;
     frame.render_stateful_widget(table, area, &mut app.table_state);
-
-    render_help(frame, area, app);
 }
 
 fn render_inline_diff(baseline: &str, modified: &str) -> Line<'static> {
@@ -236,7 +337,7 @@ fn render_inline_diff(baseline: &str, modified: &str) -> Line<'static> {
     Line::from(spans)
 }
 
-fn render_help(frame: &mut Frame, area: Rect, app: &App) {
+fn render_direct_help(frame: &mut Frame, area: Rect, app: &App) {
     let help_area = Rect {
         x: area.x + 1,
         y: area.y + area.height.saturating_sub(1),
@@ -250,6 +351,36 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         frame.render_widget(search, help_area);
     } else {
         let help_text = " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | q/Esc: Quit ";
+        let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
+        frame.render_widget(help, help_area);
+    }
+}
+
+fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
+    let help_area = Rect {
+        x: area.x + 1,
+        y: area.y + area.height.saturating_sub(1),
+        width: area.width.saturating_sub(2),
+        height: 1,
+    };
+
+    if app.search_mode {
+        let search_text = format!("/{}_", app.search_query);
+        let search = Paragraph::new(search_text).style(Style::default().fg(Color::Yellow));
+        frame.render_widget(search, help_area);
+    } else {
+        let help_text = match app.focus {
+            Focus::Explorer => {
+                if app.has_dicom_loaded() {
+                    " ↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | p: Preview | q: Quit "
+                } else {
+                    " ↑/↓: Navigate | →: Enter dir | ←: Parent dir | q: Quit "
+                }
+            }
+            Focus::TagTable => {
+                " Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview "
+            }
+        };
         let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
         frame.render_widget(help, help_area);
     }

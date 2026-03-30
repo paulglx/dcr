@@ -22,8 +22,8 @@ struct Args {
     #[arg(short = 'd', long, value_names = ["BASELINE", "MODIFIED"], num_args = 2)]
     diff: Option<Vec<PathBuf>>,
 
-    /// Path to the DICOM file to view (used when --diff is not specified)
-    #[arg(value_name = "FILE", required_unless_present = "diff")]
+    /// Path to the DICOM file to view (opens file explorer if omitted)
+    #[arg(value_name = "FILE")]
     file: Option<PathBuf>,
 }
 
@@ -48,78 +48,66 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let picker = Picker::from_query_stdio().ok();
 
-    let (tags, file_name, modified_name, validation_result, sop_class, diff_mode, dicom_file_path) =
-        if let Some(diff_files) = &args.diff {
-            if diff_files.len() != 2 {
-                return Err("--diff requires exactly two file arguments".into());
-            }
-            let baseline_path = &diff_files[0];
-            let modified_path = &diff_files[1];
-            validate_path(baseline_path)?;
-            validate_path(modified_path)?;
+    let mut app = if let Some(diff_files) = &args.diff {
+        if diff_files.len() != 2 {
+            return Err("--diff requires exactly two file arguments".into());
+        }
+        let baseline_path = &diff_files[0];
+        let modified_path = &diff_files[1];
+        validate_path(baseline_path)?;
+        validate_path(modified_path)?;
 
-            let tags = dicom::compare_dicom_files(baseline_path, modified_path)?;
+        let tags = dicom::compare_dicom_files(baseline_path, modified_path)?;
 
-            let baseline_name = baseline_path
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| baseline_path.to_string_lossy().to_string());
-            let modified_name = modified_path
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| modified_path.to_string_lossy().to_string());
+        let baseline_name = baseline_path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| baseline_path.to_string_lossy().to_string());
+        let modified_name = modified_path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| modified_path.to_string_lossy().to_string());
 
-            let sop_class =
-                validation::get_sop_class(baseline_path).unwrap_or(validation::SopClass::Unknown);
-            let validation_result = validation::validate_type1_fields(baseline_path)
-                .unwrap_or(validation::ValidationResult::NotApplicable);
+        let sop_class =
+            validation::get_sop_class(baseline_path).unwrap_or(validation::SopClass::Unknown);
+        let validation_result = validation::validate_type1_fields(baseline_path)
+            .unwrap_or(validation::ValidationResult::NotApplicable);
 
-            (
-                tags,
-                baseline_name,
-                Some(modified_name),
-                validation_result,
-                sop_class,
-                true,
-                Some(baseline_path.clone()),
-            )
-        } else {
-            let file = args
-                .file
-                .ok_or("Either --diff with two files or a single file argument is required")?;
+        App::new_with_diff(
+            tags,
+            baseline_name,
+            Some(modified_name),
+            validation_result,
+            sop_class,
+            true,
+            Some(baseline_path.clone()),
+            picker,
+        )
+    } else if let Some(file) = args.file {
+        validate_path(&file)?;
+        let obj = ::dicom::object::open_file(&file)?;
+        let tags = dicom::extract_tags(&obj);
+        let sop_class = validation::get_sop_class_from_obj(&obj);
+        let validation_result = validation::validate_type1_fields_from_obj(&obj);
 
-            validate_path(&file)?;
-            let obj = ::dicom::object::open_file(&file)?;
-            let tags = dicom::extract_tags(&obj);
-            let sop_class = validation::get_sop_class_from_obj(&obj);
-            let validation_result = validation::validate_type1_fields_from_obj(&obj);
+        let file_name = file
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| file.to_string_lossy().to_string());
 
-            let file_name = file
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| file.to_string_lossy().to_string());
-
-            (
-                tags,
-                file_name,
-                None,
-                validation_result,
-                sop_class,
-                false,
-                Some(file),
-            )
-        };
-
-    let mut app = App::new_with_diff(
-        tags,
-        file_name,
-        modified_name,
-        validation_result,
-        sop_class,
-        diff_mode,
-        dicom_file_path,
-        picker,
-    );
+        App::new_with_diff(
+            tags,
+            file_name,
+            None,
+            validation_result,
+            sop_class,
+            false,
+            Some(file),
+            picker,
+        )
+    } else {
+        App::new_explorer(picker)
+    };
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
