@@ -1,4 +1,4 @@
-use crate::app::state::{AppMode, Focus};
+use crate::app::{AppMode, Focus};
 use crate::app::App;
 use crate::dicom::{parse_dicom_datetime_delta_ms, DiffStatus};
 use crate::validation::{SopClass, ValidationResult};
@@ -13,7 +13,7 @@ use ratatui_image::StatefulImage;
 use similar::{ChangeTag, TextDiff};
 
 pub fn render(frame: &mut Frame, app: &mut App) {
-    match app.mode {
+    match app.layout.mode {
         AppMode::Direct => render_direct(frame, app),
         AppMode::Explorer => render_explorer(frame, app),
     }
@@ -22,7 +22,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 fn render_direct(frame: &mut Frame, app: &mut App) {
     let full_area = frame.area();
 
-    let (main_area, preview_area) = if app.show_preview {
+    let (main_area, preview_area) = if app.preview.show {
         let h_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -32,7 +32,7 @@ fn render_direct(frame: &mut Frame, app: &mut App) {
         (full_area, None)
     };
 
-    let validation_height = if matches!(&app.validation_result, ValidationResult::Invalid(_)) {
+    let validation_height = if matches!(&app.meta.validation_result, ValidationResult::Invalid(_)) {
         4
     } else {
         3
@@ -66,10 +66,10 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
         .split(full_area);
 
     let left_area = columns[0];
-    let explorer_focused = app.focus == Focus::Explorer;
+    let explorer_focused = app.layout.focus == Focus::Explorer;
 
-    let (explorer_area, preview_area) = if has_dicom && app.show_preview {
-        let preview_height = if app.preview_image.is_some() { 14 } else { 3 };
+    let (explorer_area, preview_area) = if has_dicom && app.preview.show {
+        let preview_height = if app.preview.image.is_some() { 14 } else { 3 };
         let left_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Fill(1), Constraint::Length(preview_height)])
@@ -79,9 +79,9 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
         (left_area, None)
     };
 
-    app.explorer_area = explorer_area;
+    app.layout.explorer_area = explorer_area;
 
-    if let Some(ref explorer) = app.explorer {
+    if let Some(ref explorer) = app.layout.explorer {
         let border_color = if explorer_focused {
             Color::Green
         } else {
@@ -101,7 +101,7 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
         let tags_area = columns[1];
 
         let validation_height =
-            if matches!(&app.validation_result, ValidationResult::Invalid(_)) {
+            if matches!(&app.meta.validation_result, ValidationResult::Invalid(_)) {
                 4
             } else {
                 3
@@ -137,7 +137,7 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
 
 fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: bool) {
     let mut header_cells = vec![];
-    if app.diff_mode {
+    if app.meta.diff_mode {
         header_cells.push(
             Cell::from(" ").style(
                 Style::default()
@@ -172,6 +172,7 @@ fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: b
 
     let rows: Vec<Row> = app
         .tags
+        .visible
         .iter()
         .map(|tag| {
             let indent = "  ".repeat(tag.depth);
@@ -234,7 +235,7 @@ fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: b
 
             let mut row_cells = vec![];
 
-            if app.diff_mode {
+            if app.meta.diff_mode {
                 let (indicator, indicator_style) = if let Some(diff_status) = &tag.diff_status {
                     match diff_status {
                         DiffStatus::Added => ("+", Style::default().fg(Color::Green)),
@@ -259,7 +260,7 @@ fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: b
         })
         .collect();
 
-    let widths: Vec<Constraint> = if app.diff_mode {
+    let widths: Vec<Constraint> = if app.meta.diff_mode {
         vec![
             Constraint::Length(1),
             Constraint::Length(16),
@@ -276,17 +277,17 @@ fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: b
         ]
     };
 
-    let title = if app.diff_mode {
-        if let Some(ref modified_name) = app.modified_name {
-            format!(" DICOM Diff: {} ↔ {} ", app.file_name, modified_name)
+    let title = if app.meta.diff_mode {
+        if let Some(ref modified_name) = app.meta.modified_name {
+            format!(" DICOM Diff: {} ↔ {} ", app.meta.name, modified_name)
         } else {
-            format!(" DICOM Diff: {} ", app.file_name)
+            format!(" DICOM Diff: {} ", app.meta.name)
         }
     } else {
-        format!(" DICOM Viewer: {} ", app.file_name)
+        format!(" DICOM Viewer: {} ", app.meta.name)
     };
 
-    let border_color = if in_explorer && app.focus == Focus::TagTable {
+    let border_color = if in_explorer && app.layout.focus == Focus::TagTable {
         Color::Green
     } else if in_explorer {
         Color::DarkGray
@@ -308,8 +309,8 @@ fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: b
                 .add_modifier(Modifier::BOLD),
         );
 
-    app.table_area = area;
-    frame.render_stateful_widget(table, area, &mut app.table_state);
+    app.tags.area = area;
+    frame.render_stateful_widget(table, area, &mut app.tags.table_state);
 }
 
 fn render_inline_diff(baseline: &str, modified: &str) -> Line<'static> {
@@ -342,8 +343,8 @@ fn render_direct_help(frame: &mut Frame, area: Rect, app: &App) {
         height: 1,
     };
 
-    if app.search_mode {
-        let search_text = format!("/{}_", app.search_query);
+    if app.search.active {
+        let search_text = format!("/{}_", app.search.query);
         let search = Paragraph::new(search_text).style(Style::default().fg(Color::Yellow));
         frame.render_widget(search, help_area);
     } else {
@@ -361,12 +362,12 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
         height: 1,
     };
 
-    if app.search_mode {
-        let search_text = format!("/{}_", app.search_query);
+    if app.search.active {
+        let search_text = format!("/{}_", app.search.query);
         let search = Paragraph::new(search_text).style(Style::default().fg(Color::Yellow));
         frame.render_widget(search, help_area);
     } else {
-        let help_text = match app.focus {
+        let help_text = match app.layout.focus {
             Focus::Explorer => {
                 if app.has_dicom_loaded() {
                     " ↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | p: Preview | q: Quit "
@@ -389,12 +390,12 @@ fn render_preview_pane(frame: &mut Frame, area: Rect, app: &mut App) {
         .border_style(Style::default().fg(Color::DarkGray))
         .title(" Preview ");
 
-    if let Some(ref error) = app.preview_error {
+    if let Some(ref error) = app.preview.error {
         let paragraph = Paragraph::new(error.as_str())
             .style(Style::default().fg(Color::Red))
             .block(block);
         frame.render_widget(paragraph, area);
-    } else if let Some(ref mut protocol) = app.preview_image {
+    } else if let Some(ref mut protocol) = app.preview.image {
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let image = StatefulImage::new(None);
@@ -408,21 +409,21 @@ fn render_preview_pane(frame: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn render_validation_pane(frame: &mut Frame, area: Rect, app: &App) {
-    let sop_class_text = match &app.sop_class {
+    let sop_class_text = match &app.meta.sop_class {
         SopClass::Ct => "CT Image Storage",
         SopClass::Mr => "MR Image Storage",
         SopClass::Other(_) => "Other",
         SopClass::Unknown => "Unknown",
     };
 
-    let sop_class_uid = match &app.sop_class {
+    let sop_class_uid = match &app.meta.sop_class {
         SopClass::Ct => "1.2.840.10008.5.1.4.1.1.2",
         SopClass::Mr => "1.2.840.10008.5.1.4.1.1.4",
         SopClass::Other(uid) => uid.as_str(),
         SopClass::Unknown => "N/A",
     };
 
-    let (title, border_color) = match &app.validation_result {
+    let (title, border_color) = match &app.meta.validation_result {
         ValidationResult::Valid => (" ✓ All required fields present ", Color::Blue),
         ValidationResult::Invalid(_) => (" ✗ Missing required fields ", Color::Red),
         ValidationResult::NotApplicable => (" Validation not applicable ", Color::DarkGray),
@@ -433,7 +434,7 @@ fn render_validation_pane(frame: &mut Frame, area: Rect, app: &App) {
         sop_class_text, sop_class_uid
     ))])];
 
-    if let ValidationResult::Invalid(missing) = &app.validation_result {
+    if let ValidationResult::Invalid(missing) = &app.meta.validation_result {
         let missing_text = missing.join(", ");
         lines.push(Line::from(vec![
             Span::styled("Missing:   ", Style::default().fg(Color::Red)),

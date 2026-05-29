@@ -27,7 +27,7 @@ fn test_build_visible_tags_from_empty() {
         ValidationResult::Valid,
         SopClass::Ct,
     );
-    assert_eq!(app.tags.len(), 0, "Empty input should produce empty output");
+    assert_eq!(app.tags.visible.len(), 0, "Empty input should produce empty output");
 }
 
 #[test]
@@ -43,10 +43,10 @@ fn test_build_visible_tags_from_flat_list() {
         ValidationResult::Valid,
         SopClass::Ct,
     );
-    assert_eq!(app.tags.len(), 3, "Flat list should have all 3 tags visible");
-    assert_eq!(app.tags[0].tag, "(0010,0010)");
-    assert_eq!(app.tags[1].tag, "(0010,0020)");
-    assert_eq!(app.tags[2].tag, "(0010,0030)");
+    assert_eq!(app.tags.visible.len(), 3, "Flat list should have all 3 tags visible");
+    assert_eq!(app.tags.visible[0].tag, "(0010,0010)");
+    assert_eq!(app.tags.visible[1].tag, "(0010,0020)");
+    assert_eq!(app.tags.visible[2].tag, "(0010,0030)");
 }
 
 #[test]
@@ -65,9 +65,9 @@ fn test_build_visible_tags_from_collapsed_sequence() {
         ValidationResult::Valid,
         SopClass::Ct,
     );
-    assert_eq!(app.tags.len(), 2, "Collapsed sequence should only show parent");
-    assert_eq!(app.tags[0].tag, "(0010,0010)");
-    assert_eq!(app.tags[1].tag, "(0008,1110)");
+    assert_eq!(app.tags.visible.len(), 2, "Collapsed sequence should only show parent");
+    assert_eq!(app.tags.visible[0].tag, "(0010,0010)");
+    assert_eq!(app.tags.visible[1].tag, "(0008,1110)");
 }
 
 #[test]
@@ -89,11 +89,11 @@ fn test_build_visible_tags_from_expanded_sequence() {
         ValidationResult::Valid,
         SopClass::Ct,
     );
-    assert_eq!(app.tags.len(), 4, "Expanded sequence should show parent + 2 children");
-    assert_eq!(app.tags[0].tag, "(0010,0010)");
-    assert_eq!(app.tags[1].tag, "(0008,1110)");
-    assert_eq!(app.tags[2].tag, "(0008,0100)");
-    assert_eq!(app.tags[3].tag, "(0008,0102)");
+    assert_eq!(app.tags.visible.len(), 4, "Expanded sequence should show parent + 2 children");
+    assert_eq!(app.tags.visible[0].tag, "(0010,0010)");
+    assert_eq!(app.tags.visible[1].tag, "(0008,1110)");
+    assert_eq!(app.tags.visible[2].tag, "(0008,0100)");
+    assert_eq!(app.tags.visible[3].tag, "(0008,0102)");
 }
 
 #[test]
@@ -114,10 +114,10 @@ fn test_collect_visible_tags_nested() {
         ValidationResult::Valid,
         SopClass::Ct,
     );
-    assert_eq!(app.tags.len(), 3, "Fully expanded nested structure should show all levels");
-    assert_eq!(app.tags[0].tag, "(0008,1110)");
-    assert_eq!(app.tags[1].tag, "Item #1");
-    assert_eq!(app.tags[2].tag, "(0020,0032)");
+    assert_eq!(app.tags.visible.len(), 3, "Fully expanded nested structure should show all levels");
+    assert_eq!(app.tags.visible[0].tag, "(0008,1110)");
+    assert_eq!(app.tags.visible[1].tag, "Item #1");
+    assert_eq!(app.tags.visible[2].tag, "(0020,0032)");
 }
 
 #[test]
@@ -138,9 +138,9 @@ fn test_collect_visible_tags_partially_expanded() {
         ValidationResult::Valid,
         SopClass::Ct,
     );
-    assert_eq!(app.tags.len(), 2, "Partially expanded should only show expanded levels");
-    assert_eq!(app.tags[0].tag, "(0008,1110)");
-    assert_eq!(app.tags[1].tag, "Item #1");
+    assert_eq!(app.tags.visible.len(), 2, "Partially expanded should only show expanded levels");
+    assert_eq!(app.tags.visible[0].tag, "(0008,1110)");
+    assert_eq!(app.tags.visible[1].tag, "Item #1");
 }
 
 #[test]
@@ -156,14 +156,14 @@ fn test_app_new_initializes_correctly() {
         SopClass::Ct,
     );
     
-    assert_eq!(app.file_name, "test.dcm");
+    assert_eq!(app.meta.name, "test.dcm");
     assert!(!app.should_quit);
-    assert!(!app.search_mode);
-    assert_eq!(app.search_query, "");
-    assert_eq!(app.tags.len(), 2);
-    assert_eq!(app.all_tags.len(), 2);
-    assert!(app.table_state.selected().is_some());
-    assert_eq!(app.table_state.selected().unwrap(), 0);
+    assert!(!app.search.active);
+    assert_eq!(app.search.query, "");
+    assert_eq!(app.tags.visible.len(), 2);
+    assert_eq!(app.tags.all.len(), 2);
+    assert!(app.tags.table_state.selected().is_some());
+    assert_eq!(app.tags.table_state.selected().unwrap(), 0);
 }
 
 #[test]
@@ -175,8 +175,8 @@ fn test_app_new_with_empty_tags() {
         SopClass::Unknown,
     );
     
-    assert_eq!(app.tags.len(), 0);
-    assert!(app.table_state.selected().is_none());
+    assert_eq!(app.tags.visible.len(), 0);
+    assert!(app.tags.table_state.selected().is_none());
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn test_app_state_initialization() {
         SopClass::Mr,
     );
     
-    match &app.validation_result {
+    match &app.meta.validation_result {
         ValidationResult::Invalid(missing) => {
             assert_eq!(missing.len(), 1);
             assert_eq!(missing[0], "Modality");
@@ -197,7 +197,7 @@ fn test_app_state_initialization() {
         _ => panic!("Expected Invalid validation result"),
     }
     
-    match &app.sop_class {
+    match &app.meta.sop_class {
         SopClass::Mr => assert!(true),
         _ => panic!("Expected Mr SOP class"),
     }
@@ -218,8 +218,8 @@ fn test_collect_visible_tags_preserves_order() {
         SopClass::Ct,
     );
     
-    assert_eq!(app.tags.len(), 4);
-    for (i, tag) in app.tags.iter().enumerate() {
+    assert_eq!(app.tags.visible.len(), 4);
+    for (i, tag) in app.tags.visible.iter().enumerate() {
         assert_eq!(tag.name, format!("Tag{}", i + 1));
     }
 }
@@ -243,10 +243,10 @@ fn test_build_visible_tags_multiple_sequences() {
         SopClass::Ct,
     );
     
-    assert_eq!(app.tags.len(), 3, "Should show seq1 + its child + seq2");
-    assert_eq!(app.tags[0].tag, "(0008,1110)");
-    assert_eq!(app.tags[1].tag, "(0008,0100)");
-    assert_eq!(app.tags[2].tag, "(0040,0260)");
+    assert_eq!(app.tags.visible.len(), 3, "Should show seq1 + its child + seq2");
+    assert_eq!(app.tags.visible[0].tag, "(0008,1110)");
+    assert_eq!(app.tags.visible[1].tag, "(0008,0100)");
+    assert_eq!(app.tags.visible[2].tag, "(0040,0260)");
 }
 
 // --- Scroll tests ---
@@ -261,46 +261,46 @@ fn create_app_with_n_tags(n: usize) -> App {
 #[test]
 fn scroll_down_from_zero() {
     let mut app = create_app_with_n_tags(5);
-    assert_eq!(app.table_state.selected(), Some(0));
-    app.scroll_down(1);
-    assert_eq!(app.table_state.selected(), Some(1));
+    assert_eq!(app.tags.table_state.selected(), Some(0));
+    app.tags.scroll_down(1);
+    assert_eq!(app.tags.table_state.selected(), Some(1));
 }
 
 #[test]
 fn scroll_down_clamps_to_last() {
     let mut app = create_app_with_n_tags(5);
-    app.scroll_down(100);
-    assert_eq!(app.table_state.selected(), Some(4));
+    app.tags.scroll_down(100);
+    assert_eq!(app.tags.table_state.selected(), Some(4));
 }
 
 #[test]
 fn scroll_down_on_empty_is_noop() {
     let mut app = create_app_with_n_tags(0);
-    app.scroll_down(1);
-    assert_eq!(app.table_state.selected(), None);
+    app.tags.scroll_down(1);
+    assert_eq!(app.tags.table_state.selected(), None);
 }
 
 #[test]
 fn scroll_up_from_middle() {
     let mut app = create_app_with_n_tags(5);
-    app.table_state.select(Some(2));
-    app.scroll_up(1);
-    assert_eq!(app.table_state.selected(), Some(1));
+    app.tags.table_state.select(Some(2));
+    app.tags.scroll_up(1);
+    assert_eq!(app.tags.table_state.selected(), Some(1));
 }
 
 #[test]
 fn scroll_up_at_zero_stays_at_zero() {
     let mut app = create_app_with_n_tags(5);
-    assert_eq!(app.table_state.selected(), Some(0));
-    app.scroll_up(1);
-    assert_eq!(app.table_state.selected(), Some(0));
+    assert_eq!(app.tags.table_state.selected(), Some(0));
+    app.tags.scroll_up(1);
+    assert_eq!(app.tags.table_state.selected(), Some(0));
 }
 
 #[test]
 fn scroll_up_on_empty_is_noop() {
     let mut app = create_app_with_n_tags(0);
-    app.scroll_up(1);
-    assert_eq!(app.table_state.selected(), None);
+    app.tags.scroll_up(1);
+    assert_eq!(app.tags.table_state.selected(), None);
 }
 
 // --- Search tests ---
@@ -308,10 +308,10 @@ fn scroll_up_on_empty_is_noop() {
 #[test]
 fn filter_tags_empty_query_shows_all() {
     let mut app = create_app_with_n_tags(3);
-    app.search_query = String::new();
-    app.filter_tags();
-    assert_eq!(app.tags.len(), 3);
-    assert!(app.filtered_tags.is_none());
+    app.search.query = String::new();
+    app.tags.filter(&app.search.query);
+    assert_eq!(app.tags.visible.len(), 3);
+    assert!(app.tags.filtered.is_none());
 }
 
 #[test]
@@ -322,9 +322,9 @@ fn filter_tags_matching_tag_string() {
         create_test_tag("(0008,0060)", "Modality", 0, false, Vec::new()),
     ];
     let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
-    app.search_query = "0010".to_string();
-    app.filter_tags();
-    assert_eq!(app.tags.len(), 2);
+    app.search.query = "0010".to_string();
+    app.tags.filter(&app.search.query);
+    assert_eq!(app.tags.visible.len(), 2);
 }
 
 #[test]
@@ -334,33 +334,33 @@ fn filter_tags_matching_name_case_insensitive() {
         create_test_tag("(0008,0060)", "Modality", 0, false, Vec::new()),
     ];
     let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
-    app.search_query = "modality".to_string();
-    app.filter_tags();
-    assert_eq!(app.tags.len(), 1);
-    assert_eq!(app.tags[0].name, "Modality");
+    app.search.query = "modality".to_string();
+    app.tags.filter(&app.search.query);
+    assert_eq!(app.tags.visible.len(), 1);
+    assert_eq!(app.tags.visible[0].name, "Modality");
 }
 
 #[test]
 fn filter_tags_no_matches() {
     let mut app = create_app_with_n_tags(3);
-    app.search_query = "zzzzzzz".to_string();
-    app.filter_tags();
-    assert_eq!(app.tags.len(), 0);
+    app.search.query = "zzzzzzz".to_string();
+    app.tags.filter(&app.search.query);
+    assert_eq!(app.tags.visible.len(), 0);
 }
 
 #[test]
 fn reset_selection_with_tags_selects_zero() {
     let mut app = create_app_with_n_tags(3);
-    app.table_state.select(Some(2));
-    app.reset_selection();
-    assert_eq!(app.table_state.selected(), Some(0));
+    app.tags.table_state.select(Some(2));
+    app.tags.reset_selection();
+    assert_eq!(app.tags.table_state.selected(), Some(0));
 }
 
 #[test]
 fn reset_selection_empty_selects_none() {
     let mut app = create_app_with_n_tags(0);
-    app.reset_selection();
-    assert_eq!(app.table_state.selected(), None);
+    app.tags.reset_selection();
+    assert_eq!(app.tags.table_state.selected(), None);
 }
 
 // --- Tree tests ---
@@ -374,12 +374,12 @@ fn expand_selected_on_collapsed_expandable() {
         create_test_tag("(0008,1110)", "ReferencedStudy", 0, true, children),
     ];
     let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
-    assert_eq!(app.tags.len(), 1);
+    assert_eq!(app.tags.visible.len(), 1);
 
-    app.expand_selected();
+    app.tags.expand_selected();
 
-    assert_eq!(app.tags.len(), 2);
-    assert_eq!(app.tags[1].tag, "(0008,0100)");
+    assert_eq!(app.tags.visible.len(), 2);
+    assert_eq!(app.tags.visible[1].tag, "(0008,0100)");
 }
 
 #[test]
@@ -388,8 +388,8 @@ fn expand_selected_on_non_expandable_is_noop() {
         create_test_tag("(0010,0010)", "PatientName", 0, false, Vec::new()),
     ];
     let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
-    app.expand_selected();
-    assert_eq!(app.tags.len(), 1);
+    app.tags.expand_selected();
+    assert_eq!(app.tags.visible.len(), 1);
 }
 
 #[test]
@@ -402,13 +402,13 @@ fn collapse_parent_on_child_selects_parent() {
 
     let tags = vec![parent];
     let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
-    assert_eq!(app.tags.len(), 2);
+    assert_eq!(app.tags.visible.len(), 2);
 
-    app.table_state.select(Some(1));
-    app.collapse_parent();
+    app.tags.table_state.select(Some(1));
+    app.tags.collapse_parent();
 
-    assert_eq!(app.tags.len(), 1);
-    assert_eq!(app.table_state.selected(), Some(0));
+    assert_eq!(app.tags.visible.len(), 1);
+    assert_eq!(app.tags.table_state.selected(), Some(0));
 }
 
 #[test]
@@ -417,9 +417,9 @@ fn collapse_parent_on_root_is_noop() {
         create_test_tag("(0010,0010)", "PatientName", 0, false, Vec::new()),
     ];
     let mut app = App::new(tags, "test.dcm".to_string(), ValidationResult::Valid, SopClass::Ct);
-    app.collapse_parent();
-    assert_eq!(app.tags.len(), 1);
-    assert_eq!(app.table_state.selected(), Some(0));
+    app.tags.collapse_parent();
+    assert_eq!(app.tags.visible.len(), 1);
+    assert_eq!(app.tags.table_state.selected(), Some(0));
 }
 
 // --- new_with_diff constructor tests ---
@@ -440,10 +440,10 @@ fn new_with_diff_stores_fields_correctly() {
         None,
     );
 
-    assert!(app.diff_mode);
-    assert_eq!(app.modified_name, Some("modified.dcm".to_string()));
-    assert_eq!(app.dicom_file_path, Some(PathBuf::from("/tmp/test.dcm")));
-    assert_eq!(app.file_name, "baseline.dcm");
-    assert_eq!(app.tags.len(), 1);
-    assert_eq!(app.table_state.selected(), Some(0));
+    assert!(app.meta.diff_mode);
+    assert_eq!(app.meta.modified_name, Some("modified.dcm".to_string()));
+    assert_eq!(app.meta.path, Some(PathBuf::from("/tmp/test.dcm")));
+    assert_eq!(app.meta.name, "baseline.dcm");
+    assert_eq!(app.tags.visible.len(), 1);
+    assert_eq!(app.tags.table_state.selected(), Some(0));
 }

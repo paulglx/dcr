@@ -3,8 +3,7 @@ use ratatui::layout::Rect;
 use ratatui_explorer::Input;
 use std::io;
 
-use super::state::{AppMode, Focus};
-use super::App;
+use super::{App, AppMode, Focus};
 
 fn key_to_explorer_input(code: KeyCode) -> Input {
     match code {
@@ -25,38 +24,40 @@ impl App {
         if event::poll(std::time::Duration::from_millis(100))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    if self.mode == AppMode::Direct {
+                    if self.layout.mode == AppMode::Direct {
                         self.handle_direct_key(key.code);
                     } else {
                         self.handle_explorer_key(key.code);
                     }
                 }
                 Event::Mouse(mouse) => match mouse.kind {
-                    MouseEventKind::ScrollDown => self.scroll_down(3),
-                    MouseEventKind::ScrollUp => self.scroll_up(3),
+                    MouseEventKind::ScrollDown => self.tags.scroll_down(3),
+                    MouseEventKind::ScrollUp => self.tags.scroll_up(3),
                     MouseEventKind::Down(MouseButton::Left) => {
-                        if self.mode == AppMode::Explorer {
+                        if self.layout.mode == AppMode::Explorer {
                             let hit = |area: Rect| {
                                 mouse.column >= area.x
                                     && mouse.column < area.x + area.width
                                     && mouse.row >= area.y
                                     && mouse.row < area.y + area.height
                             };
-                            if self.has_dicom_loaded() && hit(self.table_area) {
-                                self.focus = Focus::TagTable;
+                            if self.has_dicom_loaded() && hit(self.tags.area) {
+                                self.layout.focus = Focus::TagTable;
                             } else {
                                 self.handle_explorer_click(mouse.column, mouse.row);
                             }
                         }
-                        if self.mode == AppMode::Direct || self.focus == Focus::TagTable {
+                        if self.layout.mode == AppMode::Direct
+                            || self.layout.focus == Focus::TagTable
+                        {
                             let y = mouse.row;
-                            if y > self.table_area.y + 1
-                                && y < self.table_area.y + self.table_area.height
+                            if y > self.tags.area.y + 1
+                                && y < self.tags.area.y + self.tags.area.height
                             {
-                                let row_in_viewport = (y - self.table_area.y - 2) as usize;
-                                let tag_index = self.table_state.offset() + row_in_viewport;
-                                if tag_index < self.tags.len() {
-                                    self.table_state.select(Some(tag_index));
+                                let row_in_viewport = (y - self.tags.area.y - 2) as usize;
+                                let tag_index = self.tags.table_state.offset() + row_in_viewport;
+                                if tag_index < self.tags.visible.len() {
+                                    self.tags.table_state.select(Some(tag_index));
                                 }
                             }
                         }
@@ -70,54 +71,53 @@ impl App {
         Ok(())
     }
 
+    fn clear_search(&mut self) {
+        self.search.query.clear();
+        self.tags.clear_filter();
+    }
+
     fn handle_direct_key(&mut self, code: KeyCode) {
-        if self.search_mode {
+        if self.search.active {
             match code {
                 KeyCode::Esc => {
-                    self.search_mode = false;
-                    self.search_query.clear();
-                    self.filtered_tags = None;
-                    self.rebuild_visible_tags();
-                    self.reset_selection();
+                    self.search.active = false;
+                    self.clear_search();
                 }
                 KeyCode::Enter => {
-                    self.search_mode = false;
+                    self.search.active = false;
                 }
                 KeyCode::Backspace => {
-                    self.search_query.pop();
-                    self.filter_tags();
+                    self.search.query.pop();
+                    self.tags.filter(&self.search.query);
                 }
                 KeyCode::Char(c) => {
-                    self.search_query.push(c);
-                    self.filter_tags();
+                    self.search.query.push(c);
+                    self.tags.filter(&self.search.query);
                 }
                 _ => {}
             }
         } else {
             match code {
                 KeyCode::Char('q') | KeyCode::Esc => {
-                    if self.search_query.is_empty() {
+                    if self.search.query.is_empty() {
                         self.should_quit = true;
                     } else {
-                        self.search_query.clear();
-                        self.filtered_tags = None;
-                        self.rebuild_visible_tags();
-                        self.reset_selection();
+                        self.clear_search();
                     }
                 }
-                KeyCode::Down | KeyCode::Char('j') => self.scroll_down(1),
-                KeyCode::Up | KeyCode::Char('k') => self.scroll_up(1),
-                KeyCode::Char('/') => self.search_mode = true,
-                KeyCode::Char('p') => self.toggle_preview(),
-                KeyCode::Right | KeyCode::Char('l') => self.expand_selected(),
-                KeyCode::Left | KeyCode::Char('h') => self.collapse_parent(),
+                KeyCode::Down | KeyCode::Char('j') => self.tags.scroll_down(1),
+                KeyCode::Up | KeyCode::Char('k') => self.tags.scroll_up(1),
+                KeyCode::Char('/') => self.search.active = true,
+                KeyCode::Char('p') => self.preview.toggle(self.meta.path.as_deref()),
+                KeyCode::Right | KeyCode::Char('l') => self.tags.expand_selected(),
+                KeyCode::Left | KeyCode::Char('h') => self.tags.collapse_parent(),
                 _ => {}
             }
         }
     }
 
     fn handle_explorer_key(&mut self, code: KeyCode) {
-        match self.focus {
+        match self.layout.focus {
             Focus::Explorer => self.handle_explorer_focus_key(code),
             Focus::TagTable => self.handle_tagtable_focus_key(code),
         }
@@ -130,23 +130,23 @@ impl App {
             }
             KeyCode::Tab => {
                 if self.has_dicom_loaded() {
-                    self.focus = Focus::TagTable;
+                    self.layout.focus = Focus::TagTable;
                 }
             }
-            KeyCode::Char('p') => self.toggle_preview(),
+            KeyCode::Char('p') => self.preview.toggle(self.meta.path.as_deref()),
             KeyCode::Enter => {
                 let input = key_to_explorer_input(code);
-                if let Some(ref mut explorer) = self.explorer {
+                if let Some(ref mut explorer) = self.layout.explorer {
                     let _ = explorer.handle(input);
                 }
                 self.check_explorer_selection();
                 if self.has_dicom_loaded() {
-                    self.focus = Focus::TagTable;
+                    self.layout.focus = Focus::TagTable;
                 }
             }
             _ => {
                 let input = key_to_explorer_input(code);
-                if let Some(ref mut explorer) = self.explorer {
+                if let Some(ref mut explorer) = self.layout.explorer {
                     let _ = explorer.handle(input);
                 }
                 self.check_explorer_selection();
@@ -155,25 +155,22 @@ impl App {
     }
 
     fn handle_tagtable_focus_key(&mut self, code: KeyCode) {
-        if self.search_mode {
+        if self.search.active {
             match code {
                 KeyCode::Esc => {
-                    self.search_mode = false;
-                    self.search_query.clear();
-                    self.filtered_tags = None;
-                    self.rebuild_visible_tags();
-                    self.reset_selection();
+                    self.search.active = false;
+                    self.clear_search();
                 }
                 KeyCode::Enter => {
-                    self.search_mode = false;
+                    self.search.active = false;
                 }
                 KeyCode::Backspace => {
-                    self.search_query.pop();
-                    self.filter_tags();
+                    self.search.query.pop();
+                    self.tags.filter(&self.search.query);
                 }
                 KeyCode::Char(c) => {
-                    self.search_query.push(c);
-                    self.filter_tags();
+                    self.search.query.push(c);
+                    self.tags.filter(&self.search.query);
                 }
                 _ => {}
             }
@@ -182,31 +179,28 @@ impl App {
 
         match code {
             KeyCode::Tab => {
-                self.focus = Focus::Explorer;
+                self.layout.focus = Focus::Explorer;
             }
             KeyCode::Esc => {
-                if !self.search_query.is_empty() {
-                    self.search_query.clear();
-                    self.filtered_tags = None;
-                    self.rebuild_visible_tags();
-                    self.reset_selection();
+                if !self.search.query.is_empty() {
+                    self.clear_search();
                 } else {
-                    self.focus = Focus::Explorer;
+                    self.layout.focus = Focus::Explorer;
                 }
             }
             KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Down | KeyCode::Char('j') => self.scroll_down(1),
-            KeyCode::Up | KeyCode::Char('k') => self.scroll_up(1),
-            KeyCode::Char('/') => self.search_mode = true,
-            KeyCode::Char('p') => self.toggle_preview(),
-            KeyCode::Right | KeyCode::Char('l') => self.expand_selected(),
-            KeyCode::Left | KeyCode::Char('h') => self.collapse_parent(),
+            KeyCode::Down | KeyCode::Char('j') => self.tags.scroll_down(1),
+            KeyCode::Up | KeyCode::Char('k') => self.tags.scroll_up(1),
+            KeyCode::Char('/') => self.search.active = true,
+            KeyCode::Char('p') => self.preview.toggle(self.meta.path.as_deref()),
+            KeyCode::Right | KeyCode::Char('l') => self.tags.expand_selected(),
+            KeyCode::Left | KeyCode::Char('h') => self.tags.collapse_parent(),
             _ => {}
         }
     }
 
     fn handle_explorer_click(&mut self, column: u16, row: u16) {
-        let area = self.explorer_area;
+        let area = self.layout.explorer_area;
         let inside = column >= area.x
             && column < area.x + area.width
             && row >= area.y
@@ -215,7 +209,7 @@ impl App {
             return;
         }
 
-        self.focus = Focus::Explorer;
+        self.layout.focus = Focus::Explorer;
 
         let top = area.y + 1;
         let view_height = area.height.saturating_sub(2);
@@ -223,7 +217,7 @@ impl App {
             return;
         }
 
-        if let Some(ref mut explorer) = self.explorer {
+        if let Some(ref mut explorer) = self.layout.explorer {
             let selected = explorer.selected_idx();
             let offset = if selected >= view_height as usize {
                 selected - view_height as usize + 1
@@ -246,6 +240,7 @@ impl App {
 
     fn check_explorer_selection(&mut self) {
         let current_path = self
+            .layout
             .explorer
             .as_ref()
             .map(|e| e.current().path().to_path_buf());
@@ -258,26 +253,5 @@ impl App {
                 self.clear_dicom_state();
             }
         }
-    }
-
-    pub fn scroll_down(&mut self, amount: usize) {
-        if self.tags.is_empty() {
-            return;
-        }
-
-        let current = self.table_state.selected().unwrap_or(0);
-        let max_index = self.tags.len().saturating_sub(1);
-        let new_index = (current + amount).min(max_index);
-        self.table_state.select(Some(new_index));
-    }
-
-    pub fn scroll_up(&mut self, amount: usize) {
-        if self.tags.is_empty() {
-            return;
-        }
-
-        let current = self.table_state.selected().unwrap_or(0);
-        let new_index = current.saturating_sub(amount);
-        self.table_state.select(Some(new_index));
     }
 }
