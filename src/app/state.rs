@@ -157,17 +157,8 @@ impl App {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        let visible = Self::build_visible_tags_from(&tags);
-        if !visible.is_empty() {
-            self.table_state.select(Some(0));
-        } else {
-            self.table_state.select(None);
-        }
-        self.tags = visible;
         self.all_tags = tags;
-        self.filtered_tags = None;
-        self.search_query.clear();
-        self.search_mode = false;
+        self.filter_tags();
 
         self.preview_image = None;
         self.preview_error = None;
