@@ -69,7 +69,7 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
     let explorer_focused = app.layout.focus == Focus::Explorer;
 
     let (explorer_area, preview_area) = if has_dicom && app.preview.show {
-        let preview_height = if app.preview.image.is_some() { 14 } else { 3 };
+        let preview_height = 14;
         let left_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Fill(1), Constraint::Length(preview_height)])
