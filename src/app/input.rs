@@ -44,8 +44,8 @@ impl App {
                             };
                             if self.has_dicom_loaded() && hit(self.table_area) {
                                 self.focus = Focus::TagTable;
-                            } else if hit(self.explorer_area) {
-                                self.focus = Focus::Explorer;
+                            } else {
+                                self.handle_explorer_click(mouse.column, mouse.row);
                             }
                         }
                         if self.mode == AppMode::Direct || self.focus == Focus::TagTable {
@@ -203,6 +203,45 @@ impl App {
             KeyCode::Left | KeyCode::Char('h') => self.collapse_parent(),
             _ => {}
         }
+    }
+
+    fn handle_explorer_click(&mut self, column: u16, row: u16) {
+        let area = self.explorer_area;
+        let inside = column >= area.x
+            && column < area.x + area.width
+            && row >= area.y
+            && row < area.y + area.height;
+        if !inside {
+            return;
+        }
+
+        self.focus = Focus::Explorer;
+
+        let top = area.y + 1;
+        let view_height = area.height.saturating_sub(2);
+        if row < top || row >= top + view_height {
+            return;
+        }
+
+        if let Some(ref mut explorer) = self.explorer {
+            let selected = explorer.selected_idx();
+            let offset = if selected >= view_height as usize {
+                selected - view_height as usize + 1
+            } else {
+                0
+            };
+            let clicked = offset + (row - top) as usize;
+            if clicked >= explorer.files().len() {
+                return;
+            }
+            if clicked == selected && explorer.current().is_dir() {
+                let _ = explorer.handle(Input::Right);
+            } else {
+                explorer.set_selected_idx(clicked);
+            }
+        }
+
+        self.check_explorer_selection();
     }
 
     fn check_explorer_selection(&mut self) {
