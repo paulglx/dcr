@@ -79,6 +79,8 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
         (left_area, None)
     };
 
+    app.explorer_area = explorer_area;
+
     if let Some(ref explorer) = app.explorer {
         let border_color = if explorer_focused {
             Color::Green

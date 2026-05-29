@@ -1,4 +1,5 @@
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
+use ratatui::layout::Rect;
 use ratatui_explorer::Input;
 use std::io;
 
@@ -34,6 +35,19 @@ impl App {
                     MouseEventKind::ScrollDown => self.scroll_down(3),
                     MouseEventKind::ScrollUp => self.scroll_up(3),
                     MouseEventKind::Down(MouseButton::Left) => {
+                        if self.mode == AppMode::Explorer {
+                            let hit = |area: Rect| {
+                                mouse.column >= area.x
+                                    && mouse.column < area.x + area.width
+                                    && mouse.row >= area.y
+                                    && mouse.row < area.y + area.height
+                            };
+                            if self.has_dicom_loaded() && hit(self.table_area) {
+                                self.focus = Focus::TagTable;
+                            } else if hit(self.explorer_area) {
+                                self.focus = Focus::Explorer;
+                            }
+                        }
                         if self.mode == AppMode::Direct || self.focus == Focus::TagTable {
                             let y = mouse.row;
                             if y > self.table_area.y + 1
