@@ -97,6 +97,8 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
         frame.render_widget_ref(explorer.widget(), inner);
     }
 
+    render_explorer_marks(frame, explorer_area, app);
+
     if has_dicom {
         let tags_area = columns[1];
 
@@ -132,6 +134,54 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
         frame.render_widget(paragraph, empty_area);
 
         render_explorer_help(frame, explorer_area, app);
+    }
+}
+
+fn render_explorer_marks(frame: &mut Frame, area: Rect, app: &App) {
+    if !app.marks.any() {
+        return;
+    }
+    let Some(ref explorer) = app.layout.explorer else {
+        return;
+    };
+
+    let top = area.y + 1;
+    let view_height = area.height.saturating_sub(2) as usize;
+    if view_height == 0 || area.width < 5 {
+        return;
+    }
+
+    // Mirror the scroll-offset computation used for mouse click resolution.
+    let selected = explorer.selected_idx();
+    let offset = if selected >= view_height {
+        selected - view_height + 1
+    } else {
+        0
+    };
+
+    for (i, file) in explorer
+        .files()
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(view_height)
+    {
+        // Badge color follows the diffing direction: baseline red, modified green (§7).
+        let (badge, color) = if app.marks.baseline.as_deref() == Some(file.path()) {
+            (" A ", Color::Red)
+        } else if app.marks.modified.as_deref() == Some(file.path()) {
+            (" B ", Color::Green)
+        } else {
+            continue;
+        };
+        let badge_area = Rect {
+            x: area.x + area.width - 4,
+            y: top + (i - offset) as u16,
+            width: 3,
+            height: 1,
+        };
+        let badge_style = Style::default().fg(color).add_modifier(Modifier::BOLD);
+        frame.render_widget(Paragraph::new(badge).style(badge_style), badge_area);
     }
 }
 
@@ -366,21 +416,58 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
         let search_text = format!("/{}_", app.search.query);
         let search = Paragraph::new(search_text).style(Style::default().fg(Color::Yellow));
         frame.render_widget(search, help_area);
-    } else {
-        let help_text = match app.layout.focus {
-            Focus::Explorer => {
-                if app.has_dicom_loaded() {
-                    " ↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | p: Preview | q: Quit "
-                } else {
-                    " ↑/↓: Navigate | →: Enter dir | ←: Parent dir | q: Quit "
-                }
+        return;
+    }
+
+    if let Some(ref message) = app.marks.message {
+        let message = Paragraph::new(format!(" {} ", message))
+            .style(Style::default().fg(Color::Yellow));
+        frame.render_widget(message, help_area);
+        return;
+    }
+
+    if !app.meta.diff_mode {
+        if let Some(hint) = pending_mark_hint(app) {
+            let hint = Paragraph::new(hint).style(Style::default().fg(Color::Yellow));
+            frame.render_widget(hint, help_area);
+            return;
+        }
+    }
+
+    let help_text = match app.layout.focus {
+        Focus::Explorer => {
+            if app.meta.diff_mode {
+                " ↑/↓: Navigate | a/b: Re-mark | x: Swap | Tab: Tags | Esc: Exit diff | q: Quit "
+            } else if app.has_dicom_loaded() {
+                " ↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | p: Preview | q: Quit "
+            } else {
+                " ↑/↓: Navigate | →: Enter dir | ←: Parent dir | a/b: Mark diff | q: Quit "
             }
-            Focus::TagTable => {
-                " Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview "
-            }
-        };
-        let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
-        frame.render_widget(help, help_area);
+        }
+        Focus::TagTable => {
+            " Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview "
+        }
+    };
+    let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
+    frame.render_widget(help, help_area);
+}
+
+fn pending_mark_hint(app: &App) -> Option<String> {
+    let file_name = |path: &std::path::Path| {
+        path.file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string_lossy().to_string())
+    };
+    match (&app.marks.baseline, &app.marks.modified) {
+        (Some(a), None) => Some(format!(
+            " A: {} — press 'b' on another file to diff | Esc: Cancel ",
+            file_name(a)
+        )),
+        (None, Some(b)) => Some(format!(
+            " B: {} — press 'a' on another file to diff | Esc: Cancel ",
+            file_name(b)
+        )),
+        _ => None,
     }
 }
 

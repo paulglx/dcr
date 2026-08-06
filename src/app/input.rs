@@ -3,7 +3,7 @@ use ratatui::layout::Rect;
 use ratatui_explorer::Input;
 use std::io;
 
-use super::{App, AppMode, Focus};
+use super::{App, AppMode, DiffSide, Focus};
 
 fn key_to_explorer_input(code: KeyCode) -> Input {
     match code {
@@ -117,6 +117,7 @@ impl App {
     }
 
     fn handle_explorer_key(&mut self, code: KeyCode) {
+        self.marks.message = None;
         match self.layout.focus {
             Focus::Explorer => self.handle_explorer_focus_key(code),
             Focus::TagTable => self.handle_tagtable_focus_key(code),
@@ -125,9 +126,21 @@ impl App {
 
     fn handle_explorer_focus_key(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Char('q') | KeyCode::Esc => {
+            KeyCode::Char('q') => {
                 self.should_quit = true;
             }
+            KeyCode::Esc => {
+                if self.meta.diff_mode {
+                    self.exit_diff();
+                } else if self.marks.any() {
+                    self.marks.clear();
+                } else {
+                    self.should_quit = true;
+                }
+            }
+            KeyCode::Char('a') => self.mark_for_diff(DiffSide::Baseline),
+            KeyCode::Char('b') => self.mark_for_diff(DiffSide::Modified),
+            KeyCode::Char('x') => self.swap_diff_marks(),
             KeyCode::Tab => {
                 if self.has_dicom_loaded() {
                     self.layout.focus = Focus::TagTable;
@@ -140,7 +153,7 @@ impl App {
                     let _ = explorer.handle(input);
                 }
                 self.check_explorer_selection();
-                if self.has_dicom_loaded() {
+                if !self.meta.diff_mode && self.has_dicom_loaded() {
                     self.layout.focus = Focus::TagTable;
                 }
             }
@@ -239,6 +252,10 @@ impl App {
     }
 
     fn check_explorer_selection(&mut self) {
+        if self.meta.diff_mode {
+            return;
+        }
+
         let current_path = self
             .layout
             .explorer

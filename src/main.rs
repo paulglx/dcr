@@ -69,8 +69,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or_else(|| modified_path.to_string_lossy().to_string());
 
         let sop_class =
-            validation::get_sop_class(baseline_path).unwrap_or(validation::SopClass::Unknown);
-        let validation_result = validation::validate_type1_fields(baseline_path)
+            validation::get_sop_class(modified_path).unwrap_or(validation::SopClass::Unknown);
+        let validation_result = validation::validate_type1_fields(modified_path)
             .unwrap_or(validation::ValidationResult::NotApplicable);
 
         App::new_with_diff(
@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             validation_result,
             sop_class,
             true,
-            Some(baseline_path.clone()),
+            Some(modified_path.clone()),
             picker,
         )
     } else if let Some(file) = args.file {

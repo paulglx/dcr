@@ -1,4 +1,4 @@
 mod input;
 pub mod state;
 
-pub use state::{App, AppMode, Focus};
+pub use state::{App, AppMode, DiffSide, Focus};

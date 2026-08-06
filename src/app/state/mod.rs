@@ -1,4 +1,5 @@
 pub mod layout;
+pub mod marks;
 pub mod meta;
 pub mod preview;
 pub mod search;
@@ -14,8 +15,10 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 pub use self::layout::{AppMode, Focus};
+pub use self::marks::DiffSide;
 
 use self::layout::Layout;
+use self::marks::Marks;
 use self::meta::FileMeta;
 use self::preview::Preview;
 use self::search::Search;
@@ -26,6 +29,7 @@ pub struct App {
     pub search: Search,
     pub preview: Preview,
     pub meta: FileMeta,
+    pub marks: Marks,
     pub layout: Layout,
     pub should_quit: bool,
 }
@@ -54,6 +58,7 @@ impl App {
             tags: Tags::from_tags(tags),
             search: Search::default(),
             preview: Preview::new(picker),
+            marks: Marks::default(),
             meta: FileMeta {
                 path: dicom_file_path,
                 name: file_name,
@@ -83,6 +88,7 @@ impl App {
             tags: Tags::default(),
             search: Search::default(),
             preview: Preview::new(picker),
+            marks: Marks::default(),
             meta: FileMeta {
                 path: None,
                 name: String::new(),
@@ -160,7 +166,105 @@ impl App {
         self.tags.has_loaded()
     }
 
+    pub fn mark_for_diff(&mut self, side: DiffSide) {
+        let path = self
+            .layout
+            .explorer
+            .as_ref()
+            .map(|e| e.current().path().to_path_buf());
+        if let Some(path) = path {
+            self.mark_path_for_diff(side, &path);
+        }
+    }
+
+    pub fn mark_path_for_diff(&mut self, side: DiffSide, path: &Path) {
+        if !path.is_file() {
+            self.marks.message = Some("Only files can be marked for diff".into());
+            return;
+        }
+
+        let other = match side {
+            DiffSide::Baseline => (&self.marks.modified, "B"),
+            DiffSide::Modified => (&self.marks.baseline, "A"),
+        };
+        if other.0.as_deref() == Some(path) {
+            self.marks.message = Some(format!("Already marked as {}", other.1));
+            return;
+        }
+
+        match side {
+            DiffSide::Baseline => self.marks.baseline = Some(path.to_path_buf()),
+            DiffSide::Modified => self.marks.modified = Some(path.to_path_buf()),
+        }
+        self.open_diff_if_ready();
+    }
+
+    pub fn swap_diff_marks(&mut self) {
+        if self.meta.diff_mode {
+            std::mem::swap(&mut self.marks.baseline, &mut self.marks.modified);
+            self.open_diff_if_ready();
+        }
+    }
+
+    pub fn exit_diff(&mut self) {
+        if !self.meta.diff_mode {
+            return;
+        }
+        let baseline = self.marks.baseline.take();
+        self.marks.clear();
+        self.meta.diff_mode = false;
+        self.meta.modified_name = None;
+        self.meta.selected_path = None;
+        if let Some(path) = baseline {
+            self.load_dicom_file(&path);
+        } else {
+            self.clear_dicom_display();
+        }
+    }
+
+    fn open_diff_if_ready(&mut self) {
+        let (Some(baseline), Some(modified)) =
+            (self.marks.baseline.clone(), self.marks.modified.clone())
+        else {
+            return;
+        };
+
+        let tags = match crate::dicom::compare_dicom_files(&baseline, &modified) {
+            Ok(tags) => tags,
+            Err(e) => {
+                self.marks.message = Some(format!("Diff failed: {e}"));
+                return;
+            }
+        };
+
+        self.meta.diff_mode = true;
+        self.meta.name = display_file_name(&baseline);
+        self.meta.modified_name = Some(display_file_name(&modified));
+        self.meta.selected_path = None;
+        // Preview and validation follow the modified file (B).
+        self.meta.path = Some(modified.clone());
+        self.meta.sop_class = crate::validation::get_sop_class(&modified)
+            .unwrap_or(SopClass::Unknown);
+        self.meta.validation_result = crate::validation::validate_type1_fields(&modified)
+            .unwrap_or(ValidationResult::NotApplicable);
+
+        self.tags.all = tags;
+        self.tags.filter(&self.search.query);
+
+        self.preview.image = None;
+        self.preview.error = None;
+        if self.preview.show {
+            self.preview.pending_since = Some(Instant::now());
+        }
+    }
+
     pub fn tick_preview_debounce(&mut self) {
         self.preview.tick_debounce(self.meta.path.as_deref());
     }
+}
+
+fn display_file_name(path: &Path) -> String {
+    path.file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string())
 }

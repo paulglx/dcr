@@ -110,19 +110,25 @@ When the search input is **active**:
 
 ### 4.3 Explorer mode — Explorer focus
 
-| Key                                    | Action                                                    |
-| -------------------------------------- | --------------------------------------------------------- |
-| `q` / `Esc`                            | Quit                                                      |
-| `Tab`                                  | Switch focus to the tag table (only if a DICOM is loaded) |
-| `p`                                    | Toggle the image preview pane                             |
-| `↑` / `k`, `↓` / `j`                   | Move within the file tree                                 |
-| `→` / `l` / `Enter`                    | Enter the selected directory, or select the file          |
-| `←` / `h`                              | Go to the parent directory                                |
-| `Home` / `End` / `PageUp` / `PageDown` | Standard list navigation                                  |
+| Key                                    | Action                                                     |
+| -------------------------------------- | ---------------------------------------------------------- |
+| `q`                                    | Quit                                                       |
+| `Esc`                                  | Exit diff mode if active; else clear a pending diff mark if any; else quit |
+| `Tab`                                  | Switch focus to the tag table (only if a DICOM is loaded)  |
+| `p`                                    | Toggle the image preview pane                              |
+| `a`                                    | Mark the highlighted file as diff **baseline** (A) — see §7.1 |
+| `b`                                    | Mark the highlighted file as diff **modified** (B) — see §7.1 |
+| `x`                                    | In diff mode: swap A ↔ B and re-diff                       |
+| `↑` / `k`, `↓` / `j`                   | Move within the file tree                                  |
+| `→` / `l` / `Enter`                    | Enter the selected directory, or select the file           |
+| `←` / `h`                              | Go to the parent directory                                 |
+| `Home` / `End` / `PageUp` / `PageDown` | Standard list navigation                                   |
 
 After any navigation, the currently highlighted entry is evaluated: if it is a file it is
 loaded (see §10); otherwise any loaded DICOM state is cleared. Pressing `Enter` on a file also
-moves focus to the tag table once it has loaded.
+moves focus to the tag table once it has loaded. **Exception:** while interactive diff mode is
+active (§7.1), navigation only moves the highlight — nothing is loaded or cleared, and `Enter`
+does not move focus to the tag table.
 
 ### 4.4 Explorer mode — TagTable focus
 
@@ -235,6 +241,57 @@ The combined result is **sorted by tag id**.
 - Diff mode: `DICOM Diff: <baseline name> ↔ <modified name>`.
 - Single-file mode: `DICOM Viewer: <file name>`.
 
+### Preview & validation in diff mode
+
+In diff mode (CLI and interactive), the preview pane and the validation pane both reflect the
+**modified** file (B) — the file under investigation.
+
+### 7.1 Interactive diff (Explorer mode)
+
+Diff mode can be entered from the file explorer without restarting, using two **marks**:
+
+- With the explorer focused, `a` marks the highlighted file as **baseline (A)** and `b` marks
+  it as **modified (B)**. Marks are order-independent: either may be set first.
+- The diff opens as soon as **both** marks are set, replacing the right-hand pane with the
+  diff table (rendered exactly as CLI diff mode, §7). Focus stays on the explorer.
+- Re-pressing `a` (or `b`) on a different file **moves** that mark; if a diff is open it is
+  recomputed immediately with the new pair. This is how diffs are navigated.
+- Marking the file already carrying the **other** mark is rejected with a status message
+  (`Already marked as A` / `Already marked as B`). Marking a directory is rejected with
+  `Only files can be marked for diff`.
+- `x` (diff open only) swaps baseline and modified, and re-diffs.
+- If computing a diff fails (e.g. an unreadable file), a `Diff failed: <error>` status message
+  is shown and the current view is left unchanged; the marks are kept.
+
+**While a diff is open**, explorer navigation is browse-only: moving the highlight does not
+load or clear files (§4.3), so the diff persists while the user picks new targets for `a`/`b`.
+The tag table behaves as usual (focusable via `Tab`/click, searchable, expandable).
+
+**Exiting.** `Esc` with the explorer focused follows this precedence:
+
+1. A diff is open → exit diff mode: both marks are cleared and **file A is re-opened** as a
+   normal single file.
+2. A mark is pending (only one of A/B set) → clear the pending mark.
+3. Otherwise → quit.
+
+`q` always quits directly. `Esc` with the tag table focused keeps its usual behavior (clear
+filter, else return focus to the explorer).
+
+**Feedback.**
+
+- A marked file shows an `A` or `B` badge at the right edge of its row in the file list,
+  padded with one space on each side. Badges are colored to indicate the diffing direction,
+  matching the diff colors of §7: `A` (baseline) is **red**, `B` (modified) is **green**;
+  both bold.
+- While exactly one mark is set, the help line is replaced by a yellow hint, e.g.
+  `A: <file> — press 'b' on another file to diff | Esc: Cancel` (mirrored for a pending B).
+- Rejection / failure status messages are rendered in yellow on the help line and cleared on
+  the next key press.
+
+Search filters, preview toggling, and mouse behavior are unaffected; an active search filter
+is re-applied to the diff result when a diff opens or is recomputed. Interactive diff exists
+only in Explorer mode; CLI diff mode (`dcr -d`) is unchanged and has no marks.
+
 ---
 
 ## 8. Image preview
@@ -281,9 +338,11 @@ panes a **dark-gray** border.
   - With no file loaded: a placeholder pane titled `DICOM Viewer` reading
     `Select a DICOM file to view its tags`.
 - Help line, depending on focus and whether a file is loaded:
-  - Explorer focus, no file: `↑/↓: Navigate | →: Enter dir | ←: Parent dir | q: Quit`
-  - Explorer focus, file loaded: `↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | p: Preview | q: Quit`
+  - Explorer focus, no file: `↑/↓: Navigate | →: Enter dir | ←: Parent dir | a/b: Mark diff | q: Quit`
+  - Explorer focus, file loaded: `↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | p: Preview | q: Quit`
+  - Explorer focus, diff open: `↑/↓: Navigate | a/b: Re-mark | x: Swap | Tab: Tags | Esc: Exit diff | q: Quit`
   - TagTable focus: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview`
+  - A pending diff mark or a diff status message overrides the help line (yellow, see §7.1).
 
 ### Validation pane height
 
@@ -296,7 +355,8 @@ The validation pane is **3 rows** tall normally and **4 rows** tall when the res
 
 - The explorer provides standard directory-tree navigation (keyboard per §4.3, plus mouse).
 - **Selecting a file loads it.** Re-selecting the path that is already loaded is a no-op
-  (no reload).
+  (no reload). While interactive diff mode is active (§7.1), selection does **not** load or
+  clear anything — keyboard and mouse selection only move the highlight.
 - **Landing on a non-file** (e.g. a directory) clears any loaded DICOM: the tag table, file
   metadata, preview, and search query/state are reset. If the tag table had focus, focus
   returns to the explorer.
@@ -335,6 +395,9 @@ The validation pane is **3 rows** tall normally and **4 rows** tall when the res
 | Preview errors              | Red                                           |
 | Help line                   | Cyan                                          |
 | Search prompt               | Yellow                                        |
+| Diff mark badge `A`         | Red, bold (baseline side)                     |
+| Diff mark badge `B`         | Green, bold (modified side)                   |
+| Diff hint / status message  | Yellow                                        |
 
 ### Key constants
 
