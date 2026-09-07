@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 pub struct FileMeta {
     pub path: Option<PathBuf>,
+    pub baseline_path: Option<PathBuf>,
     pub name: String,
     pub selected_path: Option<PathBuf>,
     pub validation_result: ValidationResult,
@@ -14,6 +15,7 @@ pub struct FileMeta {
 impl FileMeta {
     pub fn clear(&mut self) {
         self.path = None;
+        self.baseline_path = None;
         self.name = String::new();
         self.selected_path = None;
         self.validation_result = ValidationResult::NotApplicable;

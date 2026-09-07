@@ -41,7 +41,17 @@ impl App {
         validation_result: ValidationResult,
         sop_class: SopClass,
     ) -> Self {
-        Self::new_with_diff(tags, file_name, None, validation_result, sop_class, false, None, None)
+        Self::new_with_diff(
+            tags,
+            file_name,
+            None,
+            validation_result,
+            sop_class,
+            false,
+            None,
+            None,
+            None,
+        )
     }
 
     pub fn new_with_diff(
@@ -52,6 +62,7 @@ impl App {
         sop_class: SopClass,
         diff_mode: bool,
         dicom_file_path: Option<PathBuf>,
+        baseline_path: Option<PathBuf>,
         picker: Option<Picker>,
     ) -> Self {
         let mut app = Self {
@@ -61,6 +72,7 @@ impl App {
             marks: Marks::default(),
             meta: FileMeta {
                 path: dicom_file_path,
+                baseline_path,
                 name: file_name,
                 selected_path: None,
                 validation_result,
@@ -76,7 +88,8 @@ impl App {
             },
             should_quit: false,
         };
-        app.preview.decode(app.meta.path.as_deref());
+        app.preview
+            .decode(app.meta.path.as_deref(), app.meta.baseline_path.as_deref());
         app
     }
 
@@ -91,6 +104,7 @@ impl App {
             marks: Marks::default(),
             meta: FileMeta {
                 path: None,
+                baseline_path: None,
                 name: String::new(),
                 selected_path: None,
                 validation_result: ValidationResult::NotApplicable,
@@ -115,6 +129,7 @@ impl App {
 
         self.meta.selected_path = Some(path.to_path_buf());
         self.meta.path = Some(path.to_path_buf());
+        self.meta.baseline_path = None;
 
         let obj = match dicom::object::open_file(path) {
             Ok(obj) => obj,
@@ -135,8 +150,7 @@ impl App {
         self.tags.all = tags;
         self.tags.filter(&self.search.query);
 
-        self.preview.image = None;
-        self.preview.error = None;
+        self.preview.clear();
         if self.preview.show {
             self.preview.pending_since = Some(Instant::now());
         }
@@ -152,8 +166,7 @@ impl App {
     fn clear_dicom_display(&mut self) {
         self.tags.clear();
         self.meta.clear();
-        self.preview.image = None;
-        self.preview.error = None;
+        self.preview.clear();
         self.preview.pending_since = None;
         self.search.query.clear();
         self.search.active = false;
@@ -241,25 +254,28 @@ impl App {
         self.meta.name = display_file_name(&baseline);
         self.meta.modified_name = Some(display_file_name(&modified));
         self.meta.selected_path = None;
-        // Preview and validation follow the modified file (B).
+        // Validation follows the modified file (B); the preview blends A and B.
         self.meta.path = Some(modified.clone());
-        self.meta.sop_class = crate::validation::get_sop_class(&modified)
-            .unwrap_or(SopClass::Unknown);
+        self.meta.baseline_path = Some(baseline.clone());
+        self.meta.sop_class =
+            crate::validation::get_sop_class(&modified).unwrap_or(SopClass::Unknown);
         self.meta.validation_result = crate::validation::validate_type1_fields(&modified)
             .unwrap_or(ValidationResult::NotApplicable);
 
         self.tags.all = tags;
         self.tags.filter(&self.search.query);
 
-        self.preview.image = None;
-        self.preview.error = None;
+        self.preview.clear();
         if self.preview.show {
             self.preview.pending_since = Some(Instant::now());
         }
     }
 
     pub fn tick_preview_debounce(&mut self) {
-        self.preview.tick_debounce(self.meta.path.as_deref());
+        self.preview.tick_debounce(
+            self.meta.path.as_deref(),
+            self.meta.baseline_path.as_deref(),
+        );
     }
 }
 

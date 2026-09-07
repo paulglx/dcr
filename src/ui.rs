@@ -1,5 +1,5 @@
-use crate::app::{AppMode, Focus};
 use crate::app::App;
+use crate::app::{AppMode, Focus};
 use crate::dicom::{parse_dicom_datetime_delta_ms, DiffStatus};
 use crate::validation::{SopClass, ValidationResult};
 use ratatui::{
@@ -398,7 +398,8 @@ fn render_direct_help(frame: &mut Frame, area: Rect, app: &App) {
         let search = Paragraph::new(search_text).style(Style::default().fg(Color::Yellow));
         frame.render_widget(search, help_area);
     } else {
-        let help_text = " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | q/Esc: Quit ";
+        let help_text =
+            " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | q/Esc: Quit ";
         let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
         frame.render_widget(help, help_area);
     }
@@ -420,8 +421,8 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     if let Some(ref message) = app.marks.message {
-        let message = Paragraph::new(format!(" {} ", message))
-            .style(Style::default().fg(Color::Yellow));
+        let message =
+            Paragraph::new(format!(" {} ", message)).style(Style::default().fg(Color::Yellow));
         frame.render_widget(message, help_area);
         return;
     }
@@ -472,21 +473,35 @@ fn pending_mark_hint(app: &App) -> Option<String> {
 }
 
 fn render_preview_pane(frame: &mut Frame, area: Rect, app: &mut App) {
+    let title = if app.meta.diff_mode {
+        Line::from(vec![
+            Span::raw(" Preview — "),
+            Span::styled("A only: red", Style::default().fg(Color::Red)),
+            Span::raw(" · "),
+            Span::styled("B only: green", Style::default().fg(Color::Green)),
+            Span::raw(" "),
+        ])
+    } else {
+        Line::from(" Preview ")
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray))
-        .title(" Preview ");
+        .title(title);
 
     if let Some(ref error) = app.preview.error {
         let paragraph = Paragraph::new(error.as_str())
             .style(Style::default().fg(Color::Red))
             .block(block);
         frame.render_widget(paragraph, area);
-    } else if let Some(ref mut protocol) = app.preview.image {
+    } else if app.preview.has_image() {
         let inner = block.inner(area);
         frame.render_widget(block, area);
-        let image = StatefulImage::new(None);
-        frame.render_stateful_widget(image, inner, protocol);
+        app.preview.fit_to(inner);
+        if let Some(ref mut protocol) = app.preview.image {
+            let image = StatefulImage::new(None);
+            frame.render_stateful_widget(image, inner, protocol);
+        }
     } else {
         let paragraph = Paragraph::new("Decoding...")
             .style(Style::default().fg(Color::DarkGray))

@@ -32,7 +32,16 @@ fn marking_a_then_b_opens_diff() {
         app.meta.modified_name,
         Some("ct-tap-with-missing-data.dcm".to_string())
     );
-    assert_eq!(app.meta.path, Some(modified()), "preview follows modified");
+    assert_eq!(
+        app.meta.path,
+        Some(modified()),
+        "validation follows modified"
+    );
+    assert_eq!(
+        app.meta.baseline_path,
+        Some(baseline()),
+        "preview blends baseline against modified"
+    );
     assert!(app.has_dicom_loaded());
     assert!(app.tags.all.iter().all(|t| t.diff_status.is_some()));
 }
@@ -96,6 +105,7 @@ fn swap_reverses_baseline_and_modified() {
     assert_eq!(app.meta.name, "ct-tap-with-missing-data.dcm");
     assert_eq!(app.meta.modified_name, Some("ct-tap.dcm".to_string()));
     assert_eq!(app.meta.path, Some(baseline()));
+    assert_eq!(app.meta.baseline_path, Some(modified()));
 }
 
 #[test]
@@ -121,6 +131,7 @@ fn exit_diff_reopens_baseline_and_clears_marks() {
     assert!(!app.marks.any());
     assert_eq!(app.meta.name, "ct-tap.dcm");
     assert_eq!(app.meta.path, Some(baseline()));
+    assert!(app.meta.baseline_path.is_none());
     assert!(app.has_dicom_loaded());
     assert!(app.tags.all.iter().all(|t| t.diff_status.is_none()));
 }

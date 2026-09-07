@@ -108,7 +108,10 @@ impl App {
                 KeyCode::Down | KeyCode::Char('j') => self.tags.scroll_down(1),
                 KeyCode::Up | KeyCode::Char('k') => self.tags.scroll_up(1),
                 KeyCode::Char('/') => self.search.active = true,
-                KeyCode::Char('p') => self.preview.toggle(self.meta.path.as_deref()),
+                KeyCode::Char('p') => self.preview.toggle(
+                    self.meta.path.as_deref(),
+                    self.meta.baseline_path.as_deref(),
+                ),
                 KeyCode::Right | KeyCode::Char('l') => self.tags.expand_selected(),
                 KeyCode::Left | KeyCode::Char('h') => self.tags.collapse_parent(),
                 _ => {}
@@ -146,7 +149,10 @@ impl App {
                     self.layout.focus = Focus::TagTable;
                 }
             }
-            KeyCode::Char('p') => self.preview.toggle(self.meta.path.as_deref()),
+            KeyCode::Char('p') => self.preview.toggle(
+                self.meta.path.as_deref(),
+                self.meta.baseline_path.as_deref(),
+            ),
             KeyCode::Enter => {
                 let input = key_to_explorer_input(code);
                 if let Some(ref mut explorer) = self.layout.explorer {
@@ -205,7 +211,10 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => self.tags.scroll_down(1),
             KeyCode::Up | KeyCode::Char('k') => self.tags.scroll_up(1),
             KeyCode::Char('/') => self.search.active = true,
-            KeyCode::Char('p') => self.preview.toggle(self.meta.path.as_deref()),
+            KeyCode::Char('p') => self.preview.toggle(
+                self.meta.path.as_deref(),
+                self.meta.baseline_path.as_deref(),
+            ),
             KeyCode::Right | KeyCode::Char('l') => self.tags.expand_selected(),
             KeyCode::Left | KeyCode::Char('h') => self.tags.collapse_parent(),
             _ => {}

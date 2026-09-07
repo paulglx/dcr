@@ -437,12 +437,17 @@ fn new_with_diff_stores_fields_correctly() {
         SopClass::Ct,
         true,
         Some(PathBuf::from("/tmp/test.dcm")),
+        Some(PathBuf::from("/tmp/base.dcm")),
         None,
     );
 
     assert!(app.meta.diff_mode);
     assert_eq!(app.meta.modified_name, Some("modified.dcm".to_string()));
     assert_eq!(app.meta.path, Some(PathBuf::from("/tmp/test.dcm")));
+    assert_eq!(
+        app.meta.baseline_path,
+        Some(PathBuf::from("/tmp/base.dcm"))
+    );
     assert_eq!(app.meta.name, "baseline.dcm");
     assert_eq!(app.tags.visible.len(), 1);
     assert_eq!(app.tags.table_state.selected(), Some(0));

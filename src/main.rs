@@ -81,6 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             sop_class,
             true,
             Some(modified_path.clone()),
+            Some(baseline_path.clone()),
             picker,
         )
     } else if let Some(file) = args.file {
@@ -103,6 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             sop_class,
             false,
             Some(file),
+            None,
             picker,
         )
     } else {

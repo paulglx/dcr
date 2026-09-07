@@ -243,8 +243,9 @@ The combined result is **sorted by tag id**.
 
 ### Preview & validation in diff mode
 
-In diff mode (CLI and interactive), the preview pane and the validation pane both reflect the
-**modified** file (B) — the file under investigation.
+In diff mode (CLI and interactive), the validation pane reflects the **modified** file (B) —
+the file under investigation. The preview pane shows a **visual image diff** of both files
+(see §8.1).
 
 ### 7.1 Interactive diff (Explorer mode)
 
@@ -301,6 +302,10 @@ only in Explorer mode; CLI diff mode (`dcr -d`) is unchanged and has no marks.
   shows `Preview requires a Kitty-compatible terminal`.
 - When available, the preview decodes the file's pixel data and renders **frame 0** as an
   image.
+- **Scaling:** the image is fitted to the pane with its aspect ratio preserved. Images larger
+  than the pane are shrunk; images smaller than the pane (on both axes) are **upscaled**
+  (nearest-neighbour) to fill it rather than rendered at native size in a corner. The fitted
+  image is rebuilt only when the pane area changes (e.g. terminal resize, layout toggle).
 - Error states (shown in red within the pane):
   - `No DICOM file path available` — no file path to decode.
   - `Failed to open DICOM file: <error>`
@@ -310,6 +315,32 @@ only in Explorer mode; CLI diff mode (`dcr -d`) is unchanged and has no marks.
 - **Debounce:** loading a new file clears the current image and, if the preview is shown,
   schedules a re-decode after a **100 ms** debounce. The debounce is checked each event-loop
   cycle, so rapid file changes do not trigger a decode for every intermediate selection.
+
+### 8.1 Visual image diff (diff mode)
+
+While a diff is open (CLI `-d` or interactive marks), the preview pane renders a **red/green
+composite** of the two images instead of a single file:
+
+- Both files are decoded through the normal preview pipeline (frame 0, each file's own
+  VOI LUT / windowing applied) and converted to 8-bit grayscale.
+- The composite is built per pixel as `RGB(A, B, min(A, B))`, where `A` is the baseline
+  luminance and `B` the modified luminance. Consequences:
+  - pixels **equal** in both files render as neutral **gray** (shared anatomy stays visible);
+  - pixels **brighter in B** (content added to the modified file) tint **green**;
+  - pixels **brighter in A** (content removed from the modified file) tint **red**;
+  - tint intensity scales with the magnitude of the difference — no thresholds.
+- The pane title carries a legend: ` Preview — A only: red · B only: green ` (colored to
+  match). Outside diff mode the title is ` Preview ` as before.
+- If the two images have **different dimensions**, the pane shows the error
+  `Image dimensions differ: <W>×<H> (A) vs <W>×<H> (B)` — images are never resized for
+  diffing. Any per-file decode failure surfaces the corresponding §8 error message.
+- All other §8 behavior (toggle with `p`, Kitty requirement, 100 ms debounce, `Decoding...`)
+  is unchanged. Exiting diff mode returns the preview to the single re-opened file.
+
+> **Known limitation:** because each file is windowed with its **own** VOI LUT before
+> comparison, two files whose raw pixels are identical but whose window settings differ will
+> show a global tint. Comparing against a shared normalization is a possible future
+> refinement.
 
 ---
 
