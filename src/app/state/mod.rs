@@ -1,3 +1,4 @@
+pub mod dirview;
 pub mod layout;
 pub mod marks;
 pub mod meta;
@@ -17,6 +18,7 @@ use std::time::Instant;
 pub use self::layout::{AppMode, Focus};
 pub use self::marks::DiffSide;
 
+use self::dirview::DirView;
 use self::layout::Layout;
 use self::marks::Marks;
 use self::meta::FileMeta;
@@ -31,6 +33,10 @@ pub struct App {
     pub meta: FileMeta,
     pub marks: Marks,
     pub layout: Layout,
+    /// Present when the loaded file is a DICOMDIR (see `dirview`).
+    pub dirview: Option<DirView>,
+    /// DICOMDIR to return to (with its view state) after drilling into a referenced file.
+    pub dir_return: Option<(PathBuf, DirView)>,
     pub should_quit: bool,
 }
 
@@ -86,6 +92,8 @@ impl App {
                 explorer: None,
                 explorer_area: Rect::default(),
             },
+            dirview: None,
+            dir_return: None,
             should_quit: false,
         };
         app.preview
@@ -118,15 +126,25 @@ impl App {
                 explorer: Some(explorer),
                 explorer_area: Rect::default(),
             },
+            dirview: None,
+            dir_return: None,
             should_quit: false,
         }
     }
 
     pub fn load_dicom_file(&mut self, path: &Path) {
+        self.load_file_inner(path, None);
+    }
+
+    /// Loads `path`; `reuse` carries a previously built directory view for the same file
+    /// so that returning to a DICOMDIR keeps its expansion and selection.
+    fn load_file_inner(&mut self, path: &Path, reuse: Option<DirView>) {
         if self.meta.selected_path.as_deref() == Some(path) {
             return;
         }
 
+        self.dirview = None;
+        self.dir_return = None;
         self.meta.selected_path = Some(path.to_path_buf());
         self.meta.path = Some(path.to_path_buf());
         self.meta.baseline_path = None;
@@ -150,9 +168,181 @@ impl App {
         self.tags.all = tags;
         self.tags.filter(&self.search.query);
 
+        match reuse {
+            Some(view) => self.dirview = Some(view),
+            None => self.attach_dicomdir(&obj),
+        }
+
         self.preview.clear();
         if self.preview.show {
             self.preview.pending_since = Some(Instant::now());
+        }
+    }
+
+    /// Switches to the directory view when `obj` (the loaded file) is a DICOMDIR.
+    pub fn attach_dicomdir(
+        &mut self,
+        obj: &dicom::object::FileDicomObject<dicom::object::InMemDicomObject>,
+    ) {
+        let Some(path) = self.meta.path.clone() else {
+            return;
+        };
+        if self.meta.diff_mode || !crate::dicom::dicomdir::is_dicomdir(&path, obj) {
+            return;
+        }
+        let dir = crate::dicom::DicomDir::from_object(&path, obj);
+        self.dirview = Some(DirView::new(dir));
+        // The DICOMDIR itself has no pixel data; the preview follows the selected record.
+        self.preview.clear();
+        self.preview.pending_since = if self.preview.show {
+            Some(Instant::now())
+        } else {
+            None
+        };
+    }
+
+    /// True while the DICOMDIR tree (not the raw tag table) is displayed.
+    pub fn dir_active(&self) -> bool {
+        self.dirview.as_ref().is_some_and(|v| v.is_active())
+    }
+
+    /// Toggles between the DICOMDIR tree and the raw tag table. Clears any search filter,
+    /// since the two views filter different things.
+    pub fn toggle_dir_raw(&mut self) {
+        let Some(view) = self.dirview.as_mut() else {
+            return;
+        };
+        view.show_raw = !view.show_raw;
+        self.search.query.clear();
+        self.search.active = false;
+        self.tags.clear_filter();
+        if let Some(view) = self.dirview.as_mut() {
+            view.clear_filter();
+        }
+        self.schedule_preview();
+    }
+
+    /// Opens the file referenced by the selected directory record, remembering the
+    /// DICOMDIR so `Esc` can come back to it.
+    pub fn open_selected_record(&mut self) {
+        if !self.dir_active() {
+            return;
+        }
+        let Some(target) = self.dirview.as_ref().and_then(|v| v.open_target()) else {
+            return;
+        };
+        if !target.is_file() {
+            self.marks.message = Some(format!(
+                "Referenced file not found: {}",
+                target
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            ));
+            return;
+        }
+        let (Some(dir_path), Some(view)) = (self.meta.path.clone(), self.dirview.take()) else {
+            return;
+        };
+        self.meta.selected_path = None;
+        self.load_file_inner(&target, None);
+        self.dir_return = Some((dir_path, view));
+        if self.layout.mode == AppMode::Explorer {
+            self.layout.focus = Focus::TagTable;
+        }
+    }
+
+    /// Returns to the DICOMDIR a file was opened from. False if there is none.
+    pub fn return_to_dicomdir(&mut self) -> bool {
+        let Some((path, view)) = self.dir_return.take() else {
+            return false;
+        };
+        self.meta.selected_path = None;
+        self.load_file_inner(&path, Some(view));
+        true
+    }
+
+    /// Path the preview pane should decode: the selected record's file in the directory
+    /// view, otherwise the loaded file.
+    pub fn preview_path(&self) -> Option<PathBuf> {
+        if self.dir_active() {
+            self.dirview.as_ref().and_then(|v| v.preview_target.clone())
+        } else {
+            self.meta.path.clone()
+        }
+    }
+
+    /// Clears the preview and schedules a debounced re-decode of `preview_path()`.
+    fn schedule_preview(&mut self) {
+        self.preview.clear();
+        self.preview.pending_since = if self.preview.show {
+            Some(Instant::now())
+        } else {
+            None
+        };
+    }
+
+    /// Runs `f` on the directory view and re-schedules the preview if the selection
+    /// moved to a different file.
+    fn with_dirview(&mut self, f: impl FnOnce(&mut DirView)) {
+        let before = self.dirview.as_ref().and_then(|v| v.preview_target.clone());
+        if let Some(view) = self.dirview.as_mut() {
+            f(view);
+        }
+        let after = self.dirview.as_ref().and_then(|v| v.preview_target.clone());
+        if before != after {
+            self.schedule_preview();
+        }
+    }
+
+    // Navigation that dispatches to whichever view is on screen.
+
+    pub fn nav_down(&mut self, amount: usize) {
+        if self.dir_active() {
+            self.with_dirview(|v| v.scroll_down(amount));
+        } else {
+            self.tags.scroll_down(amount);
+        }
+    }
+
+    pub fn nav_up(&mut self, amount: usize) {
+        if self.dir_active() {
+            self.with_dirview(|v| v.scroll_up(amount));
+        } else {
+            self.tags.scroll_up(amount);
+        }
+    }
+
+    pub fn nav_expand(&mut self) {
+        if self.dir_active() {
+            self.with_dirview(|v| v.expand_selected());
+        } else {
+            self.tags.expand_selected();
+        }
+    }
+
+    pub fn nav_collapse(&mut self) {
+        if self.dir_active() {
+            self.with_dirview(|v| v.collapse_parent());
+        } else {
+            self.tags.collapse_parent();
+        }
+    }
+
+    pub fn nav_select(&mut self, index: usize) {
+        if self.dir_active() {
+            self.with_dirview(|v| v.select(index));
+        } else if index < self.tags.visible.len() {
+            self.tags.table_state.select(Some(index));
+        }
+    }
+
+    pub fn apply_search(&mut self) {
+        let query = self.search.query.clone();
+        if self.dir_active() {
+            self.with_dirview(|v| v.filter(&query));
+        } else {
+            self.tags.filter(&query);
         }
     }
 
@@ -164,6 +354,8 @@ impl App {
     }
 
     fn clear_dicom_display(&mut self) {
+        self.dirview = None;
+        self.dir_return = None;
         self.tags.clear();
         self.meta.clear();
         self.preview.clear();
@@ -272,10 +464,15 @@ impl App {
     }
 
     pub fn tick_preview_debounce(&mut self) {
-        self.preview.tick_debounce(
-            self.meta.path.as_deref(),
-            self.meta.baseline_path.as_deref(),
-        );
+        let path = self.preview_path();
+        self.preview
+            .tick_debounce(path.as_deref(), self.meta.baseline_path.as_deref());
+    }
+
+    pub fn toggle_preview(&mut self) {
+        let path = self.preview_path();
+        self.preview
+            .toggle(path.as_deref(), self.meta.baseline_path.as_deref());
     }
 }
 

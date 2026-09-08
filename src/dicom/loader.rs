@@ -84,9 +84,11 @@ fn extract_sequence_items(items: &[InMemDicomObject], depth: usize) -> Vec<Dicom
 
     for (item_idx, item) in items.iter().enumerate() {
         let item_children = extract_tags_from_inmem_object(item, depth + 1);
+        // DICOMDIR records get a readable label (e.g. `SERIES · #3 CT`) instead of nothing.
+        let name = super::dicomdir::record_summary(item).unwrap_or_default();
         let item_header = DicomTag {
             tag: format!("Item #{}", item_idx + 1),
-            name: String::new(),
+            name,
             vr: String::new(),
             value: format!("<{} element(s)>", item.into_iter().count()),
             baseline_value: None,

@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| file.to_string_lossy().to_string());
 
-        App::new_with_diff(
+        let mut app = App::new_with_diff(
             tags,
             file_name,
             None,
@@ -106,7 +106,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(file),
             None,
             picker,
-        )
+        );
+        app.attach_dicomdir(&obj);
+        app
     } else {
         App::new_explorer(picker)
     };

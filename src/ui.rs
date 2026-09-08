@@ -1,5 +1,11 @@
+use crate::app::state::dirview::{DirView, Node, Row as DirRow};
 use crate::app::App;
 use crate::app::{AppMode, Focus};
+use crate::dicom::dicomdir::{
+    self, sop_class_name, transfer_syntax_name, ACCESSION_NUMBER, INSTANCE_NUMBER, MODALITY,
+    PATIENT_ID, PATIENT_NAME, REFERENCED_SOP_CLASS_UID, REFERENCED_TRANSFER_SYNTAX_UID,
+    SERIES_DESCRIPTION, SERIES_NUMBER, STUDY_DATE, STUDY_DESCRIPTION,
+};
 use crate::dicom::{parse_dicom_datetime_delta_ms, DiffStatus};
 use crate::validation::{SopClass, ValidationResult};
 use ratatui::{
@@ -32,11 +38,7 @@ fn render_direct(frame: &mut Frame, app: &mut App) {
         (full_area, None)
     };
 
-    let validation_height = if matches!(&app.meta.validation_result, ValidationResult::Invalid(_)) {
-        4
-    } else {
-        3
-    };
+    let validation_height = validation_pane_height(app);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -52,7 +54,7 @@ fn render_direct(frame: &mut Frame, app: &mut App) {
         render_preview_pane(frame, preview_area, app);
     }
 
-    render_tag_table(frame, area, app, false);
+    render_content(frame, area, app, false);
     render_direct_help(frame, area, app);
 }
 
@@ -102,19 +104,14 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
     if has_dicom {
         let tags_area = columns[1];
 
-        let validation_height =
-            if matches!(&app.meta.validation_result, ValidationResult::Invalid(_)) {
-                4
-            } else {
-                3
-            };
+        let validation_height = validation_pane_height(app);
 
         let v_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(5), Constraint::Length(validation_height)])
             .split(tags_area);
 
-        render_tag_table(frame, v_chunks[0], app, true);
+        render_content(frame, v_chunks[0], app, true);
         render_validation_pane(frame, v_chunks[1], app);
 
         if let Some(preview_area) = preview_area {
@@ -183,6 +180,415 @@ fn render_explorer_marks(frame: &mut Frame, area: Rect, app: &App) {
         let badge_style = Style::default().fg(color).add_modifier(Modifier::BOLD);
         frame.render_widget(Paragraph::new(badge).style(badge_style), badge_area);
     }
+}
+
+/// The validation pane is 3 rows tall, 4 when it has a list of problems to show.
+fn validation_pane_height(app: &App) -> u16 {
+    let has_details = match &app.dirview {
+        Some(view) => !view.dir.issues.is_empty(),
+        None => matches!(&app.meta.validation_result, ValidationResult::Invalid(_)),
+    };
+    if has_details {
+        4
+    } else {
+        3
+    }
+}
+
+/// Main content pane: the DICOMDIR tree when one is loaded and not toggled to raw,
+/// otherwise the tag table.
+fn render_content(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: bool) {
+    if app.dir_active() {
+        render_dir_view(frame, area, app, in_explorer);
+    } else {
+        render_tag_table(frame, area, app, in_explorer);
+    }
+}
+
+fn content_border_color(app: &App, in_explorer: bool) -> Color {
+    if in_explorer && app.layout.focus != Focus::TagTable {
+        Color::DarkGray
+    } else {
+        Color::Green
+    }
+}
+
+fn render_dir_view(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: bool) {
+    let border_color = content_border_color(app, in_explorer);
+    let Some(view) = app.dirview.as_mut() else {
+        return;
+    };
+
+    let folder = view
+        .dir
+        .base_dir
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| view.dir.base_dir.display().to_string());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color))
+        .title(format!(" DICOMDIR · {} ", folder));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Length(1),
+            Constraint::Fill(1),
+        ])
+        .split(inner);
+
+    frame.render_widget(Paragraph::new(dir_summary_lines(view)), chunks[0]);
+    frame.render_widget(
+        Paragraph::new(Line::styled(
+            "─".repeat(inner.width as usize),
+            Style::default().fg(Color::DarkGray),
+        )),
+        chunks[1],
+    );
+
+    let rows_area = chunks[2];
+    let rows: Vec<Row> = view
+        .visible
+        .iter()
+        .map(|row| Row::new(vec![Cell::from(dir_row_line(view, row))]))
+        .collect();
+    let table = Table::new(rows, [Constraint::Fill(1)]).row_highlight_style(
+        Style::default()
+            .bg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD),
+    );
+
+    view.area = area;
+    view.rows_area = rows_area;
+    frame.render_stateful_widget(table, rows_area, &mut view.table_state);
+}
+
+fn plural(n: usize, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("{n} {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
+/// Two-line strip above the tree: what the file-set holds, and how healthy it is.
+fn dir_summary_lines(view: &DirView) -> Vec<Line<'static>> {
+    let dir = &view.dir;
+    let stats = &dir.stats;
+    let dim = Style::default().fg(Color::DarkGray);
+    let bold = Style::default().add_modifier(Modifier::BOLD);
+
+    let mut counts = vec![
+        plural(stats.patients, "patient", "patients"),
+        plural(stats.studies, "study", "studies"),
+        format!("{} series", stats.series),
+    ];
+    let images = stats.leaves - stats.other_leaf_types.iter().map(|(_, n)| n).sum::<usize>();
+    counts.push(plural(images, "image", "images"));
+    for (kind, n) in &stats.other_leaf_types {
+        counts.push(format!("{n} {}", kind.to_lowercase()));
+    }
+    let mut first = vec![Span::styled(format!(" {}", counts.join(" · ")), bold)];
+    if !stats.modalities.is_empty() {
+        first.push(Span::raw("      "));
+        for (i, (modality, n)) in stats.modalities.iter().enumerate() {
+            if i > 0 {
+                first.push(Span::raw("  "));
+            }
+            first.push(Span::styled(
+                format!("{modality} ×{n}"),
+                Style::default().fg(Color::Yellow),
+            ));
+        }
+    }
+
+    let mut second = vec![
+        Span::styled(" File-set ID: ", dim),
+        Span::raw(dir.file_set_id.clone().unwrap_or_else(|| "(none)".into())),
+        Span::styled("   consistency: ", dim),
+    ];
+    match dir.consistency_flag {
+        Some(0) => second.push(Span::raw("0")),
+        Some(flag) => second.push(Span::styled(
+            flag.to_string(),
+            Style::default().fg(Color::Red),
+        )),
+        None => second.push(Span::styled("(none)", dim)),
+    }
+    second.push(Span::styled("   in use: ", dim));
+    let total = dir.records.len();
+    let in_use_style = if stats.in_use < total {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+    second.push(Span::styled(
+        format!("{}/{}", stats.in_use, total),
+        in_use_style,
+    ));
+    second.push(Span::styled("   on disk: ", dim));
+    let disk_style = if stats.files_found < stats.referenced_files {
+        Style::default().fg(Color::Red)
+    } else {
+        Style::default().fg(Color::Green)
+    };
+    second.push(Span::styled(
+        format!("{}/{}", stats.files_found, stats.referenced_files),
+        disk_style,
+    ));
+    if !dir.linked_by_offsets {
+        second.push(Span::styled(
+            "   (tree from record order)",
+            Style::default().fg(Color::Yellow),
+        ));
+    }
+
+    vec![Line::from(first), Line::from(second)]
+}
+
+/// Pads `s` to `width` columns, truncating with `…` when longer.
+fn fit(s: &str, width: usize) -> String {
+    let count = s.chars().count();
+    if count > width {
+        let mut out: String = s.chars().take(width.saturating_sub(1)).collect();
+        out.push('…');
+        out
+    } else {
+        format!("{s:<width$}")
+    }
+}
+
+fn dir_row_line(view: &DirView, row: &DirRow) -> Line<'static> {
+    let indent = "  ".repeat(row.depth);
+    let indicator = if row.expandable {
+        if row.expanded {
+            "▼ "
+        } else {
+            "▶ "
+        }
+    } else {
+        "  "
+    };
+    let prefix = format!("{indent}{indicator}");
+    let dim = Style::default().fg(Color::DarkGray);
+
+    match &row.node {
+        Node::Record(idx) => record_line(view, *idx, prefix),
+        Node::Layout => {
+            let mut spans = vec![
+                Span::raw(prefix),
+                Span::styled(
+                    "LAYOUT  ",
+                    Style::default()
+                        .fg(Color::Blue)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(format!(
+                    "{} · {} referenced",
+                    plural(view.folders.len(), "folder", "folders"),
+                    plural(view.dir.stats.referenced_files, "file", "files"),
+                )),
+            ];
+            let unreferenced = view.dir.unreferenced.len();
+            spans.push(Span::raw(" · "));
+            spans.push(Span::styled(
+                format!("{unreferenced} unreferenced on disk"),
+                if unreferenced > 0 {
+                    Style::default().fg(Color::Red)
+                } else {
+                    dim
+                },
+            ));
+            Line::from(spans)
+        }
+        Node::Folder(i) => {
+            let folder = &view.folders[*i];
+            let name = if folder.name.is_empty() {
+                "(root)".to_string()
+            } else {
+                format!("{}/", folder.name)
+            };
+            let parents: Vec<String> = folder
+                .parents
+                .iter()
+                .map(|&p| view.dir.records[p].summary().replace(" · ", " "))
+                .collect();
+            Line::from(vec![
+                Span::raw(prefix),
+                Span::styled(fit(&name, 28), Style::default().fg(Color::Blue)),
+                Span::raw(format!(" {:>6} files   ", folder.file_count)),
+                Span::styled(format!("← {}", parents.join(", ")), dim),
+            ])
+        }
+        Node::Unreferenced => Line::from(vec![
+            Span::raw(prefix),
+            Span::styled(
+                format!(
+                    "unreferenced on disk: {}",
+                    plural(view.dir.unreferenced.len(), "file", "files")
+                ),
+                Style::default().fg(Color::Red),
+            ),
+        ]),
+        Node::UnreferencedFile(i) => Line::from(vec![
+            Span::raw(prefix),
+            Span::styled(view.dir.unreferenced[*i].display().to_string(), dim),
+        ]),
+    }
+}
+
+fn record_line(view: &DirView, idx: usize, prefix: String) -> Line<'static> {
+    let dir = &view.dir;
+    let record = &dir.records[idx];
+    let inactive = !record.in_use;
+    let dim = Style::default().fg(Color::DarkGray);
+    let plain = if inactive { dim } else { Style::default() };
+    let type_style = if inactive {
+        dim
+    } else {
+        match record.record_type.as_str() {
+            "PATIENT" => Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+            "STUDY" => Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+            "SERIES" => Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+            _ => Style::default(),
+        }
+    };
+
+    let mut spans = vec![
+        Span::raw(prefix),
+        Span::styled(format!("{:<8}", record.record_type), type_style),
+    ];
+    let none = |s: Option<String>, fallback: &str| -> (String, Style) {
+        match s {
+            Some(v) => (v, plain),
+            None => (fallback.to_string(), dim),
+        }
+    };
+
+    match record.record_type.as_str() {
+        "PATIENT" => {
+            let (name, style) = none(
+                record.str(PATIENT_NAME).map(|n| n.replace('^', " ")),
+                "(no name)",
+            );
+            spans.push(Span::styled(fit(&name, 28), style));
+            spans.push(Span::styled("  ID ", dim));
+            let (id, style) = none(record.str(PATIENT_ID), "-");
+            spans.push(Span::styled(fit(&id, 16), style));
+            spans.push(Span::styled(
+                format!("  {}", plural(record.children.len(), "study", "studies")),
+                dim,
+            ));
+        }
+        "STUDY" => {
+            let (date, style) = none(
+                record.str(STUDY_DATE).map(|d| dicomdir::format_da(&d)),
+                "(no date)",
+            );
+            spans.push(Span::styled(fit(&date, 10), style));
+            spans.push(Span::raw("  "));
+            let (desc, style) = none(record.str(STUDY_DESCRIPTION), "(no description)");
+            spans.push(Span::styled(fit(&desc, 30), style));
+            spans.push(Span::styled("  acc ", dim));
+            let (acc, style) = none(record.str(ACCESSION_NUMBER), "-");
+            spans.push(Span::styled(fit(&acc, 16), style));
+            spans.push(Span::styled(
+                format!(
+                    "  {} series · {} img",
+                    record.children.len(),
+                    record.leaf_count
+                ),
+                dim,
+            ));
+        }
+        "SERIES" => {
+            let (num, style) = none(record.str(SERIES_NUMBER).map(|n| format!("#{n}")), "#-");
+            spans.push(Span::styled(fit(&num, 6), style));
+            let (modality, style) = none(record.str(MODALITY), "-");
+            spans.push(Span::styled(
+                fit(&modality, 4),
+                if inactive {
+                    dim
+                } else {
+                    style.fg(Color::Yellow)
+                },
+            ));
+            let (desc, style) = none(record.str(SERIES_DESCRIPTION), "(no description)");
+            spans.push(Span::styled(fit(&desc, 28), style));
+            spans.push(Span::styled(
+                fit(&format!("{} img", record.leaf_count), 10),
+                plain,
+            ));
+            let range = dir
+                .instance_range(idx)
+                .map(|r| r.to_string())
+                .unwrap_or_default();
+            let range_style = if range.contains('(') {
+                Style::default().fg(Color::Yellow)
+            } else {
+                plain
+            };
+            spans.push(Span::styled(fit(&range, 18), range_style));
+            let folders = dir.child_folders(idx);
+            match folders.len() {
+                0 => {}
+                1 => spans.push(Span::styled(
+                    if folders[0].is_empty() {
+                        "(root)".to_string()
+                    } else {
+                        format!("{}/", folders[0])
+                    },
+                    dim,
+                )),
+                n => spans.push(Span::styled(
+                    format!("{n} folders"),
+                    Style::default().fg(Color::Yellow),
+                )),
+            }
+        }
+        _ => {
+            let (num, style) = none(record.str(INSTANCE_NUMBER).map(|n| format!("#{n}")), "");
+            spans.push(Span::styled(fit(&num, 7), style));
+            let (file, style) = none(record.file_name().map(str::to_string), "(no file)");
+            spans.push(Span::styled(fit(&file, 22), style));
+            let (sop, style) = none(
+                record
+                    .str(REFERENCED_SOP_CLASS_UID)
+                    .map(|u| sop_class_name(&u)),
+                "",
+            );
+            spans.push(Span::styled(fit(&sop, 20), style));
+            let (ts, style) = none(
+                record
+                    .str(REFERENCED_TRANSFER_SYNTAX_UID)
+                    .map(|u| transfer_syntax_name(&u)),
+                "",
+            );
+            spans.push(Span::styled(fit(&ts, 20), style));
+            match record.file_exists {
+                Some(true) => spans.push(Span::styled("✓", Style::default().fg(Color::Green))),
+                Some(false) => {
+                    spans.push(Span::styled("✗ missing", Style::default().fg(Color::Red)))
+                }
+                None => {}
+            }
+        }
+    }
+
+    if inactive {
+        spans.push(Span::styled("  (inactive)", dim));
+    }
+    Line::from(spans)
 }
 
 fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: bool) {
@@ -333,17 +739,13 @@ fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: b
         } else {
             format!(" DICOM Diff: {} ", app.meta.name)
         }
+    } else if app.dirview.is_some() {
+        format!(" DICOMDIR (raw tags): {} ", app.meta.name)
     } else {
         format!(" DICOM Viewer: {} ", app.meta.name)
     };
 
-    let border_color = if in_explorer && app.layout.focus == Focus::TagTable {
-        Color::Green
-    } else if in_explorer {
-        Color::DarkGray
-    } else {
-        Color::Green
-    };
+    let border_color = content_border_color(app, in_explorer);
 
     let table = Table::new(rows, widths)
         .header(header)
@@ -397,12 +799,27 @@ fn render_direct_help(frame: &mut Frame, area: Rect, app: &App) {
         let search_text = format!("/{}_", app.search.query);
         let search = Paragraph::new(search_text).style(Style::default().fg(Color::Yellow));
         frame.render_widget(search, help_area);
-    } else {
-        let help_text =
-            " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | q/Esc: Quit ";
-        let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
-        frame.render_widget(help, help_area);
+        return;
     }
+
+    if let Some(ref message) = app.marks.message {
+        let message =
+            Paragraph::new(format!(" {} ", message)).style(Style::default().fg(Color::Yellow));
+        frame.render_widget(message, help_area);
+        return;
+    }
+
+    let help_text = if app.dir_active() {
+        " ↑/↓: Navigate | →/←: Expand/Collapse | Enter: Open file | t: Raw tags | /: Search | p: Preview | q/Esc: Quit "
+    } else if app.dirview.is_some() {
+        " ↑/↓: Navigate | →: Expand | ←: Collapse | t: Directory | /: Search | p: Preview | q/Esc: Quit "
+    } else if app.dir_return.is_some() {
+        " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | Esc: Back to DICOMDIR | q: Quit "
+    } else {
+        " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | q/Esc: Quit "
+    };
+    let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
+    frame.render_widget(help, help_area);
 }
 
 fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
@@ -446,7 +863,15 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
             }
         }
         Focus::TagTable => {
-            " Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview "
+            if app.dir_active() {
+                " Tab: Explorer | ↑/↓: Navigate | →/←: Expand/Collapse | Enter: Open file | t: Raw tags | /: Search | p: Preview "
+            } else if app.dirview.is_some() {
+                " Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | t: Directory | /: Search | p: Preview "
+            } else if app.dir_return.is_some() {
+                " Tab: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | Esc: Back to DICOMDIR "
+            } else {
+                " Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview "
+            }
         }
     };
     let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
@@ -511,6 +936,11 @@ fn render_preview_pane(frame: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn render_validation_pane(frame: &mut Frame, area: Rect, app: &App) {
+    if let Some(view) = &app.dirview {
+        render_dicomdir_health(frame, area, view);
+        return;
+    }
+
     let sop_class_text = match &app.meta.sop_class {
         SopClass::Ct => "CT Image Storage",
         SopClass::Mr => "MR Image Storage",
@@ -555,5 +985,57 @@ fn render_validation_pane(frame: &mut Frame, area: Rect, app: &App) {
             .title_style(Style::default().fg(border_color)),
     );
 
+    frame.render_widget(paragraph, area);
+}
+
+/// Replaces the type-1 validation pane while a DICOMDIR is loaded: record and file
+/// counts plus the list of consistency problems found.
+fn render_dicomdir_health(frame: &mut Frame, area: Rect, view: &DirView) {
+    let dir = &view.dir;
+    let stats = &dir.stats;
+    let (title, border_color) = if dir.is_healthy() {
+        (" ✓ DICOMDIR consistent ".to_string(), Color::Blue)
+    } else {
+        (
+            format!(
+                " ✗ DICOMDIR: {} ",
+                plural(dir.issues.len(), "issue", "issues")
+            ),
+            Color::Red,
+        )
+    };
+
+    let mut lines = vec![Line::from(vec![Span::raw(format!(
+        "Records: {} ({} in use) · Files: {}/{} on disk · Unreferenced: {} · Links: {}",
+        dir.records.len(),
+        stats.in_use,
+        stats.files_found,
+        stats.referenced_files,
+        dir.unreferenced.len(),
+        if dir.linked_by_offsets {
+            "byte offsets"
+        } else {
+            "record order"
+        },
+    ))])];
+
+    if !dir.issues.is_empty() {
+        let issues: Vec<String> = dir.issues.iter().map(|i| i.to_string()).collect();
+        lines.push(Line::from(vec![
+            Span::styled("Issues:    ", Style::default().fg(Color::Red)),
+            Span::styled(
+                issues.join(", "),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+    }
+
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color))
+            .title(title)
+            .title_style(Style::default().fg(border_color)),
+    );
     frame.render_widget(paragraph, area);
 }

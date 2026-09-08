@@ -31,8 +31,8 @@ impl App {
                     }
                 }
                 Event::Mouse(mouse) => match mouse.kind {
-                    MouseEventKind::ScrollDown => self.tags.scroll_down(3),
-                    MouseEventKind::ScrollUp => self.tags.scroll_up(3),
+                    MouseEventKind::ScrollDown => self.nav_down(3),
+                    MouseEventKind::ScrollUp => self.nav_up(3),
                     MouseEventKind::Down(MouseButton::Left) => {
                         if self.layout.mode == AppMode::Explorer {
                             let hit = |area: Rect| {
@@ -41,7 +41,12 @@ impl App {
                                     && mouse.row >= area.y
                                     && mouse.row < area.y + area.height
                             };
-                            if self.has_dicom_loaded() && hit(self.tags.area) {
+                            let content_area = if self.dir_active() {
+                                self.dirview.as_ref().map(|v| v.area).unwrap_or_default()
+                            } else {
+                                self.tags.area
+                            };
+                            if self.has_dicom_loaded() && hit(content_area) {
                                 self.layout.focus = Focus::TagTable;
                             } else {
                                 self.handle_explorer_click(mouse.column, mouse.row);
@@ -51,14 +56,22 @@ impl App {
                             || self.layout.focus == Focus::TagTable
                         {
                             let y = mouse.row;
-                            if y > self.tags.area.y + 1
+                            if self.dir_active() {
+                                let (rows, offset) = self
+                                    .dirview
+                                    .as_ref()
+                                    .map(|v| (v.rows_area, v.table_state.offset()))
+                                    .unwrap_or_default();
+                                if y >= rows.y && y < rows.y + rows.height {
+                                    let index = offset + (y - rows.y) as usize;
+                                    self.nav_select(index);
+                                }
+                            } else if y > self.tags.area.y + 1
                                 && y < self.tags.area.y + self.tags.area.height
                             {
                                 let row_in_viewport = (y - self.tags.area.y - 2) as usize;
                                 let tag_index = self.tags.table_state.offset() + row_in_viewport;
-                                if tag_index < self.tags.visible.len() {
-                                    self.tags.table_state.select(Some(tag_index));
-                                }
+                                self.nav_select(tag_index);
                             }
                         }
                     }
@@ -73,49 +86,58 @@ impl App {
 
     fn clear_search(&mut self) {
         self.search.query.clear();
-        self.tags.clear_filter();
+        self.apply_search();
+    }
+
+    /// Shared handling of the search prompt keys. Returns true if the key was consumed.
+    fn handle_search_key(&mut self, code: KeyCode) -> bool {
+        if !self.search.active {
+            return false;
+        }
+        match code {
+            KeyCode::Esc => {
+                self.search.active = false;
+                self.clear_search();
+            }
+            KeyCode::Enter => {
+                self.search.active = false;
+            }
+            KeyCode::Backspace => {
+                self.search.query.pop();
+                self.apply_search();
+            }
+            KeyCode::Char(c) => {
+                self.search.query.push(c);
+                self.apply_search();
+            }
+            _ => {}
+        }
+        true
     }
 
     fn handle_direct_key(&mut self, code: KeyCode) {
-        if self.search.active {
-            match code {
-                KeyCode::Esc => {
-                    self.search.active = false;
+        self.marks.message = None;
+        if self.handle_search_key(code) {
+            return;
+        }
+        match code {
+            KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Esc => {
+                if !self.search.query.is_empty() {
                     self.clear_search();
+                } else if !self.return_to_dicomdir() {
+                    self.should_quit = true;
                 }
-                KeyCode::Enter => {
-                    self.search.active = false;
-                }
-                KeyCode::Backspace => {
-                    self.search.query.pop();
-                    self.tags.filter(&self.search.query);
-                }
-                KeyCode::Char(c) => {
-                    self.search.query.push(c);
-                    self.tags.filter(&self.search.query);
-                }
-                _ => {}
             }
-        } else {
-            match code {
-                KeyCode::Char('q') | KeyCode::Esc => {
-                    if self.search.query.is_empty() {
-                        self.should_quit = true;
-                    } else {
-                        self.clear_search();
-                    }
-                }
-                KeyCode::Down | KeyCode::Char('j') => self.tags.scroll_down(1),
-                KeyCode::Up | KeyCode::Char('k') => self.tags.scroll_up(1),
-                KeyCode::Char('/') => self.search.active = true,
-                KeyCode::Char('p') => self.preview.toggle(
-                    self.meta.path.as_deref(),
-                    self.meta.baseline_path.as_deref(),
-                ),
-                KeyCode::Right | KeyCode::Char('l') => self.tags.expand_selected(),
-                KeyCode::Left | KeyCode::Char('h') => self.tags.collapse_parent(),
-                _ => {}
-            }
+            KeyCode::Down | KeyCode::Char('j') => self.nav_down(1),
+            KeyCode::Up | KeyCode::Char('k') => self.nav_up(1),
+            KeyCode::Char('/') => self.search.active = true,
+            KeyCode::Char('p') => self.toggle_preview(),
+            KeyCode::Char('t') => self.toggle_dir_raw(),
+            KeyCode::Enter => self.open_selected_record(),
+            KeyCode::Right | KeyCode::Char('l') => self.nav_expand(),
+            KeyCode::Left | KeyCode::Char('h') => self.nav_collapse(),
+            _ => {}
         }
     }
 
@@ -149,10 +171,7 @@ impl App {
                     self.layout.focus = Focus::TagTable;
                 }
             }
-            KeyCode::Char('p') => self.preview.toggle(
-                self.meta.path.as_deref(),
-                self.meta.baseline_path.as_deref(),
-            ),
+            KeyCode::Char('p') => self.toggle_preview(),
             KeyCode::Enter => {
                 let input = key_to_explorer_input(code);
                 if let Some(ref mut explorer) = self.layout.explorer {
@@ -174,25 +193,7 @@ impl App {
     }
 
     fn handle_tagtable_focus_key(&mut self, code: KeyCode) {
-        if self.search.active {
-            match code {
-                KeyCode::Esc => {
-                    self.search.active = false;
-                    self.clear_search();
-                }
-                KeyCode::Enter => {
-                    self.search.active = false;
-                }
-                KeyCode::Backspace => {
-                    self.search.query.pop();
-                    self.tags.filter(&self.search.query);
-                }
-                KeyCode::Char(c) => {
-                    self.search.query.push(c);
-                    self.tags.filter(&self.search.query);
-                }
-                _ => {}
-            }
+        if self.handle_search_key(code) {
             return;
         }
 
@@ -203,20 +204,19 @@ impl App {
             KeyCode::Esc => {
                 if !self.search.query.is_empty() {
                     self.clear_search();
-                } else {
+                } else if !self.return_to_dicomdir() {
                     self.layout.focus = Focus::Explorer;
                 }
             }
             KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Down | KeyCode::Char('j') => self.tags.scroll_down(1),
-            KeyCode::Up | KeyCode::Char('k') => self.tags.scroll_up(1),
+            KeyCode::Down | KeyCode::Char('j') => self.nav_down(1),
+            KeyCode::Up | KeyCode::Char('k') => self.nav_up(1),
             KeyCode::Char('/') => self.search.active = true,
-            KeyCode::Char('p') => self.preview.toggle(
-                self.meta.path.as_deref(),
-                self.meta.baseline_path.as_deref(),
-            ),
-            KeyCode::Right | KeyCode::Char('l') => self.tags.expand_selected(),
-            KeyCode::Left | KeyCode::Char('h') => self.tags.collapse_parent(),
+            KeyCode::Char('p') => self.toggle_preview(),
+            KeyCode::Char('t') => self.toggle_dir_raw(),
+            KeyCode::Enter => self.open_selected_record(),
+            KeyCode::Right | KeyCode::Char('l') => self.nav_expand(),
+            KeyCode::Left | KeyCode::Char('h') => self.nav_collapse(),
             _ => {}
         }
     }

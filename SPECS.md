@@ -98,6 +98,11 @@ When the search input is **inactive**:
 | `←` / `h`   | Collapse the nearest expanded parent                   |
 | `/`         | Open the search input                                  |
 | `p`         | Toggle the image preview pane                          |
+| `t`         | DICOMDIR only: toggle directory view ↔ raw tags (§11)  |
+| `Enter`     | DICOMDIR only: open the selected record's file (§11)   |
+
+`Esc` (and `q` when no filter is active) quits, except that `Esc` first **returns to the
+DICOMDIR** when the current file was opened from one (§11.5).
 
 When the search input is **active**:
 
@@ -144,6 +149,12 @@ Search behaves identically to Direct mode (§4.2). Otherwise:
 | `←` / `h`            | Collapse the nearest expanded parent                                   |
 | `/`                  | Open the search input                                                  |
 | `p`                  | Toggle the image preview pane                                          |
+| `t`                  | DICOMDIR only: toggle directory view ↔ raw tags (§11)                  |
+| `Enter`              | DICOMDIR only: open the selected record's file (§11)                   |
+
+`Esc` with no filter active returns to the DICOMDIR if the file was opened from one (§11.5),
+otherwise returns focus to the explorer. While a DICOMDIR directory view is shown, the
+navigation keys (`↑/↓`, `→/←`, `/`, mouse) act on the directory tree instead of the tag table.
 
 ---
 
@@ -172,6 +183,10 @@ Sequence (SQ) elements that contain items are **expandable**:
 
 - The sequence row's value reads `<Sequence with N item(s)>`.
 - Its children are item rows labeled `Item #k` (1-based) whose value reads `<M element(s)>`.
+  When an item is a DICOMDIR directory record (it carries `(0004,1430)` Directory Record
+  Type), its **Name** column shows a summary of the record instead of being empty, e.g.
+  `PATIENT · Doe John`, `STUDY · 2024-03-12 · CT ABDOMEN`, `SERIES · #11 CT`,
+  `IMAGE · #17 IM000017` (see §11.2 for the key per record type).
 - Each item's contents are extracted recursively, increasing depth at each level.
 
 ### Tree presentation
@@ -373,12 +388,18 @@ panes a **dark-gray** border.
   - Explorer focus, file loaded: `↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | p: Preview | q: Quit`
   - Explorer focus, diff open: `↑/↓: Navigate | a/b: Re-mark | x: Swap | Tab: Tags | Esc: Exit diff | q: Quit`
   - TagTable focus: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview`
+  - TagTable focus, DICOMDIR directory view: `Tab: Explorer | ↑/↓: Navigate | →/←: Expand/Collapse | Enter: Open file | t: Raw tags | /: Search | p: Preview`
+  - TagTable focus, DICOMDIR raw view: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | t: Directory | /: Search | p: Preview`
+  - TagTable focus, file opened from a DICOMDIR: `... | p: Preview | Esc: Back to DICOMDIR`
   - A pending diff mark or a diff status message overrides the help line (yellow, see §7.1).
+    Direct mode shows the same variants (with `q/Esc: Quit`) and also displays status
+    messages (e.g. `Referenced file not found: <name>`) in yellow on its help line.
 
 ### Validation pane height
 
 The validation pane is **3 rows** tall normally and **4 rows** tall when the result is invalid
-(to fit the list of missing fields).
+(to fit the list of missing fields). While a DICOMDIR is loaded the pane shows the file-set
+health instead (§11.4) and is 4 rows tall when there is at least one issue.
 
 ---
 
@@ -478,3 +499,117 @@ Modality-specific groups:
 - **MR:** `ImageType`, `ScanningSequence`, `SequenceVariant`, `MRAcquisitionType`
 
 If any required field is missing, the validation pane lists them as `Missing: a, b, ...`.
+
+---
+
+## 11. DICOMDIR directory view
+
+A DICOMDIR (Media Storage Directory) stores a whole file-set as one flat
+`(0004,1220) Directory Record Sequence` whose items are linked to each other by **byte
+offsets** (next sibling, first child). As a tag table this is unreadable, so dcr renders it as
+a tree of patients, studies, series and instances, plus a summary of how the referenced files
+are laid out on disk.
+
+### 11.1 Detection & parsing
+
+- A loaded file is treated as a DICOMDIR when its media storage SOP class is
+  `1.2.840.10008.1.3.10`, **or** when it is named `DICOMDIR` (case-insensitive). Detection
+  applies to `dcr <FILE>` and to files selected in the explorer; **never in diff mode**.
+- Records are read from the sequence in order. The byte offset of every item is recovered by
+  re-reading the file through a byte-counting token stream, so the tree can be rebuilt from
+  `(0004,1200)` root offset, `(0004,1400)` next-record offset and `(0004,1420)` lower-level
+  offset — the ground truth. Records unreachable from the root are kept as extra roots so
+  nothing silently disappears.
+- If the offsets cannot be read (or their count does not match the record count), the
+  hierarchy is rebuilt from **record order** instead: each record hangs under the closest
+  preceding record of a lower rank (`PATIENT` < `STUDY` < `SERIES` < everything else). The
+  summary strip then says `(tree from record order)`.
+- For every record with a `(0004,1500)` Referenced File ID, the file's existence under the
+  DICOMDIR's folder is checked. The folder is also walked (up to 50 000 entries, hidden files
+  skipped, the DICOMDIR itself excluded) to find files that **no record references**; path
+  comparison is case-insensitive.
+- Raw tags are still extracted, so the tag table remains available (`t`).
+
+### 11.2 Rows
+
+The right-hand pane is titled ` DICOMDIR · <folder name> `. Below a two-line **summary strip**
+and a rule, the tree is a single-column table using the same `▼`/`▶` indicators, 2-space
+indentation, highlight and focus-border rules as the tag table. One row per record, with a
+fixed grammar per level (columns padded, long values truncated with `…`):
+
+| Type                | Columns                                                                                        |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| `PATIENT` (magenta) | name (`^` → space), `ID <id>`, `<n> study/studies`                                              |
+| `STUDY` (cyan)      | date as `YYYY-MM-DD`, description, `acc <accession>`, `<n> series · <m> img`                    |
+| `SERIES` (yellow)   | `#<number>`, modality, description, `<n> img`, instance range, folder                           |
+| leaf (`IMAGE`, …)   | `#<instance>`, file name, SOP class name, transfer syntax name, `✓` (green) or `✗ missing` (red) |
+
+- Missing values show a dark-gray placeholder: `(no name)`, `(no date)`, `(no description)`,
+  `(no file)`, `-`.
+- The **instance range** of a series is `min–max` over its children's Instance Numbers,
+  followed by `(N gap(s)[, N dup])` in yellow when numbers are missing or repeated; `#n` when
+  min = max; empty when no child has an instance number.
+- The series **folder** is shown as `<dir>/` (or `(root)`) when all its instances live in one
+  folder, and `<n> folders` in yellow otherwise.
+- Records whose `(0004,1410)` in-use flag is 0 are rendered dark gray with ` (inactive)`
+  appended; they are counted but never hidden.
+- Leaf record types other than `IMAGE` (e.g. `SR DOCUMENT`, `PRESENTATION`) use the leaf
+  grammar with their own type label. Unknown SOP class / transfer syntax UIDs fall back to
+  `SOP …<tail>` / the raw UID.
+
+**Default expansion:** patients and studies are open, series are folded (they may hold
+hundreds of instances), `LAYOUT` is folded. `→` expands, `←` collapses the selected row if it
+is open, otherwise its nearest expanded ancestor (moving the selection there).
+
+**`LAYOUT` node** (blue, last root row): `LAYOUT  <f> folder(s) · <n> files referenced ·
+<u> unreferenced on disk` (`u` red when > 0). Expanded, it lists one row per referenced folder
+— `<dir>/  <count> files  ← SERIES #11 CT, …` naming the parent records stored there — and,
+when applicable, an `unreferenced on disk: N file(s)` row (red) that expands to the first 200
+stray files (dark gray). This is the "what the folder should look like" versus "what it does
+look like" comparison.
+
+### 11.3 Summary strip
+
+- Line 1 (bold): `<p> patient(s) · <s> study/studies · <n> series · <i> image(s)`, followed by
+  `<k> <type>` for other leaf types, then the series modalities as `CT ×3  MR ×2` (yellow),
+  most frequent first.
+- Line 2: `File-set ID: <id|(none)>   consistency: <flag>   in use: <a>/<n>   on disk: <f>/<r>`.
+  The consistency flag is red when non-zero, `in use` yellow when some records are inactive,
+  `on disk` green when every referenced file exists and red otherwise.
+
+### 11.4 Health pane
+
+While a DICOMDIR is loaded (directory **or** raw view), the validation pane is replaced by:
+
+- Title ` ✓ DICOMDIR consistent ` (blue) or ` ✗ DICOMDIR: N issue(s) ` (red).
+- `Records: <n> (<in use> in use) · Files: <f>/<r> on disk · Unreferenced: <u> · Links: byte offsets|record order`
+- When there are issues, a red `Issues:` line listing them, comma-separated. Possible issues:
+  `consistency flag <n>`, `N inactive record(s)`, `N missing file(s)`, `N unreferenced file(s)`,
+  `N dangling offset(s)` (links pointing outside the record set, including cycles),
+  `N unreachable record(s)`, `N hierarchy violation(s)` (a child not ranked deeper than its
+  parent, or a STUDY/SERIES/IMAGE at the root), `N duplicate instance UID(s)`,
+  `N series with mixed transfer syntax(es)`, `offsets unreadable, tree rebuilt from record order`.
+
+### 11.5 Interaction
+
+- **Preview follows the selection.** A leaf row previews its referenced file; a branch row
+  previews the *middle* child recursively (the middle instance of the middle series — the first
+  instance is often a localizer). Rows without a file (LAYOUT, folders) show no image. Changing
+  the selection to a different file clears the preview and re-decodes after the usual 100 ms
+  debounce (§8). In the raw view the preview targets the DICOMDIR file itself, as for any file.
+- **`Enter`** on a leaf (or an unreferenced-file row) opens that file in the normal tag view,
+  remembering the DICOMDIR and its view state. In Explorer mode focus moves to the tag table.
+  If the file does not exist on disk the status message `Referenced file not found: <name>` is
+  shown instead. **`Esc`** (with no filter active) then **returns to the DICOMDIR** with its
+  expansion state and selection intact and without re-parsing it. Loading any other file, or
+  clearing the display, forgets the return target.
+- **`t`** toggles between the directory view and the raw tag table (titled
+  ` DICOMDIR (raw tags): <name> `). Toggling clears the search filter, since the two views
+  filter different things.
+- **Search (`/`)** in the directory view matches the query case-insensitively against a
+  record's type, every primitive attribute value and its file path. Matching records are shown
+  together with their ancestors and descendants, all expanded; the `LAYOUT` node is hidden while
+  a filter is active. An empty query restores the full tree and default selection.
+- **Mouse:** scroll moves the directory selection by 3 rows; a click inside the rows selects the
+  clicked row; in Explorer mode a click inside the pane focuses it.
+- Diff mode ignores DICOMDIRs (both CLI and interactive marks show raw tags).
