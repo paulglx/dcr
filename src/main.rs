@@ -5,7 +5,7 @@ mod ui;
 mod validation;
 
 use app::App;
-use clap::Parser;
+use clap::{value_parser, Arg, Command};
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
@@ -15,17 +15,42 @@ use ratatui::prelude::*;
 use ratatui_image::picker::Picker;
 use std::{io, path::Path, path::PathBuf};
 
-/// DICOM TUI Viewer - View DICOM file tags in a terminal interface
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
 struct Args {
-    /// Compare two DICOM files (baseline vs modified)
-    #[arg(short = 'd', long, value_names = ["BASELINE", "MODIFIED"], num_args = 2)]
+    /// Baseline and modified paths when `--diff` is given.
     diff: Option<Vec<PathBuf>>,
-
-    /// Path to the DICOM file to view (opens file explorer if omitted)
-    #[arg(value_name = "FILE")]
+    /// Single file to view; explorer mode when absent.
     file: Option<PathBuf>,
+}
+
+impl Args {
+    fn parse() -> Self {
+        let matches = Command::new(env!("CARGO_PKG_NAME"))
+            .version(env!("CARGO_PKG_VERSION"))
+            .about(env!("CARGO_PKG_DESCRIPTION"))
+            .arg(
+                Arg::new("diff")
+                    .short('d')
+                    .long("diff")
+                    .value_names(["BASELINE", "MODIFIED"])
+                    .num_args(2)
+                    .value_parser(value_parser!(PathBuf))
+                    .help("Compare two DICOM files (baseline vs modified)"),
+            )
+            .arg(
+                Arg::new("file")
+                    .value_name("FILE")
+                    .value_parser(value_parser!(PathBuf))
+                    .help("Path to the DICOM file to view (opens file explorer if omitted)"),
+            )
+            .get_matches();
+
+        Args {
+            diff: matches
+                .get_many::<PathBuf>("diff")
+                .map(|paths| paths.cloned().collect()),
+            file: matches.get_one::<PathBuf>("file").cloned(),
+        }
+    }
 }
 
 fn validate_path(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
