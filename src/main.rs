@@ -1,5 +1,6 @@
 mod app;
 mod dicom;
+mod textdiff;
 mod ui;
 mod validation;
 

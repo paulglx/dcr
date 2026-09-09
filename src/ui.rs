@@ -16,7 +16,7 @@ use ratatui::{
     Frame,
 };
 use ratatui_image::StatefulImage;
-use similar::{ChangeTag, TextDiff};
+use crate::textdiff::{word_diff, Change};
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     match app.layout.mode {
@@ -766,23 +766,22 @@ fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: b
 }
 
 fn render_inline_diff(baseline: &str, modified: &str) -> Line<'static> {
-    let diff = TextDiff::from_words(baseline, modified);
-    let mut spans = Vec::new();
-
-    for change in diff.iter_all_changes() {
-        let text = change.value();
-        let style = match change.tag() {
-            ChangeTag::Delete => Style::default()
-                .fg(Color::Red)
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::CROSSED_OUT),
-            ChangeTag::Insert => Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-            ChangeTag::Equal => Style::default(),
-        };
-        spans.push(Span::styled(text.to_string(), style));
-    }
+    let spans = word_diff(baseline, modified)
+        .into_iter()
+        .map(|(change, text)| {
+            let style = match change {
+                Change::Delete => Style::default()
+                    .fg(Color::Red)
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::CROSSED_OUT),
+                Change::Insert => Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+                Change::Equal => Style::default(),
+            };
+            Span::styled(text.to_string(), style)
+        })
+        .collect::<Vec<_>>();
 
     Line::from(spans)
 }
