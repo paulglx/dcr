@@ -25,7 +25,7 @@ fn dicomdir_path() -> PathBuf {
 
 fn load() -> DicomDir {
     let path = dicomdir_path();
-    let obj = dicom::object::open_file(&path).expect("fixture opens");
+    let obj = dicom_object::open_file(&path).expect("fixture opens");
     DicomDir::from_object(&path, &obj)
 }
 
@@ -41,7 +41,7 @@ fn record_types(dir: &DicomDir, indices: &[usize]) -> Vec<String> {
 #[test]
 fn detects_dicomdir_by_sop_class_and_by_name() {
     let path = dicomdir_path();
-    let obj = dicom::object::open_file(&path).expect("fixture opens");
+    let obj = dicom_object::open_file(&path).expect("fixture opens");
     assert!(dicomdir::is_dicomdir(&path, &obj));
 
     let ct = fixture_dir()
@@ -49,7 +49,7 @@ fn detects_dicomdir_by_sop_class_and_by_name() {
         .unwrap()
         .join("dicom")
         .join("ct-tap.dcm");
-    let ct_obj = dicom::object::open_file(&ct).expect("ct fixture opens");
+    let ct_obj = dicom_object::open_file(&ct).expect("ct fixture opens");
     assert!(!dicomdir::is_dicomdir(&ct, &ct_obj));
     assert!(
         dicomdir::is_dicomdir(&PathBuf::from("/x/dicomdir"), &ct_obj),
@@ -229,7 +229,7 @@ fn names_for_common_uids() {
 
 #[test]
 fn raw_tag_table_labels_directory_record_items() {
-    let obj = dicom::object::open_file(dicomdir_path()).unwrap();
+    let obj = dicom_object::open_file(dicomdir_path()).unwrap();
     let tags = dcr::dicom::extract_tags(&obj);
     let seq = tags
         .iter()

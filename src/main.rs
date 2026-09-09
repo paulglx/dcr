@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     } else if let Some(file) = args.file {
         validate_path(&file)?;
-        let obj = ::dicom::object::open_file(&file)?;
+        let obj = ::dicom_object::open_file(&file)?;
         let tags = dicom::extract_tags(&obj);
         let sop_class = validation::get_sop_class_from_obj(&obj);
         let validation_result = validation::validate_type1_fields_from_obj(&obj);

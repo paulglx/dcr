@@ -1,5 +1,5 @@
-use dicom::core::Tag;
-use dicom::dictionary_std::tags;
+use dicom_core::Tag;
+use dicom_dictionary_std::tags;
 
 pub const SOP_COMMON_TYPE1_TAGS: &[(Tag, &str)] = &[
     (tags::SOP_CLASS_UID, "SOPClassUID"),

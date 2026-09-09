@@ -5,8 +5,8 @@
 //! This module rebuilds the patient → study → series → instance hierarchy from those
 //! offsets, checks the referenced files against the disk and collects consistency issues.
 
-use dicom::core::Tag;
-use dicom::object::{FileDicomObject, InMemDicomObject};
+use dicom_core::Tag;
+use dicom_object::{FileDicomObject, InMemDicomObject};
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, Read, Seek, SeekFrom};
@@ -550,11 +550,11 @@ impl<R: Read> Read for CountingReader<R> {
 /// Returns the byte offset (from the start of the file) of every item of the
 /// Directory Record Sequence, in sequence order.
 pub fn scan_item_offsets(path: &Path) -> Result<Vec<u64>, Box<dyn std::error::Error>> {
-    use dicom::encoding::TransferSyntaxIndex;
-    use dicom::object::meta::FileMetaTable;
-    use dicom::parser::dataset::read::DataSetReader;
-    use dicom::parser::dataset::DataToken;
-    use dicom::transfer_syntax::TransferSyntaxRegistry;
+    use dicom_encoding::TransferSyntaxIndex;
+    use dicom_object::meta::FileMetaTable;
+    use dicom_parser::dataset::read::DataSetReader;
+    use dicom_parser::dataset::DataToken;
+    use dicom_transfer_syntax_registry::TransferSyntaxRegistry;
 
     let mut file = BufReader::new(std::fs::File::open(path)?);
     let mut head = [0u8; 132];

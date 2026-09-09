@@ -137,7 +137,7 @@ fn decode_dicom_image(path: &Path) -> Result<DynamicImage, String> {
     use dicom_pixeldata::PixelDecoder;
 
     let obj =
-        dicom::object::open_file(path).map_err(|e| format!("Failed to open DICOM file: {e}"))?;
+        dicom_object::open_file(path).map_err(|e| format!("Failed to open DICOM file: {e}"))?;
 
     let pixel_data = obj
         .decode_pixel_data()

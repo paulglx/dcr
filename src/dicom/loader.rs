@@ -1,9 +1,9 @@
 use super::tag::DicomTag;
-use dicom::core::dictionary::DataDictionary;
-use dicom::core::header::HasLength;
-use dicom::core::header::Header;
-use dicom::dictionary_std::StandardDataDictionary;
-use dicom::object::{open_file, FileDicomObject, InMemDicomObject};
+use dicom_core::dictionary::DataDictionary;
+use dicom_core::header::HasLength;
+use dicom_core::header::Header;
+use dicom_dictionary_std::StandardDataDictionary;
+use dicom_object::{open_file, FileDicomObject, InMemDicomObject};
 use std::path::Path;
 
 pub fn load_dicom_file<P: AsRef<Path>>(
@@ -144,7 +144,7 @@ fn extract_tags_from_inmem_object(obj: &InMemDicomObject, depth: usize) -> Vec<D
     tags
 }
 
-fn format_value<I: HasLength, P>(value: &dicom::core::value::Value<I, P>) -> String {
+fn format_value<I: HasLength, P>(value: &dicom_core::value::Value<I, P>) -> String {
     let value_str = if value.primitive().is_some() {
         value
             .to_str()

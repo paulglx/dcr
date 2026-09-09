@@ -1,9 +1,9 @@
 use super::rules::*;
 use super::types::{SopClass, ValidationResult};
-use dicom::core::Tag;
-use dicom::dictionary_std::tags;
-use dicom::dictionary_std::uids::{CT_IMAGE_STORAGE, MR_IMAGE_STORAGE};
-use dicom::object::{open_file, FileDicomObject, InMemDicomObject};
+use dicom_core::Tag;
+use dicom_dictionary_std::tags;
+use dicom_dictionary_std::uids::{CT_IMAGE_STORAGE, MR_IMAGE_STORAGE};
+use dicom_object::{open_file, FileDicomObject, InMemDicomObject};
 use std::path::Path;
 
 pub fn validate_type1_fields<P: AsRef<Path>>(

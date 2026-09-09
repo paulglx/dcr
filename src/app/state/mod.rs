@@ -149,7 +149,7 @@ impl App {
         self.meta.path = Some(path.to_path_buf());
         self.meta.baseline_path = None;
 
-        let obj = match dicom::object::open_file(path) {
+        let obj = match dicom_object::open_file(path) {
             Ok(obj) => obj,
             Err(_) => {
                 self.clear_dicom_display();
@@ -182,7 +182,7 @@ impl App {
     /// Switches to the directory view when `obj` (the loaded file) is a DICOMDIR.
     pub fn attach_dicomdir(
         &mut self,
-        obj: &dicom::object::FileDicomObject<dicom::object::InMemDicomObject>,
+        obj: &dicom_object::FileDicomObject<dicom_object::InMemDicomObject>,
     ) {
         let Some(path) = self.meta.path.clone() else {
             return;
