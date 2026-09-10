@@ -66,10 +66,13 @@ relevant (see §8 and §9).
 
 ## 3. Event loop
 
-The app redraws, then waits for input with a **100 ms poll interval**. Only key **press**
-events are handled (key release/repeat events are ignored). After each poll cycle, the preview
-debounce timer is ticked (see §8). The app exits the loop and quits when a quit action sets the
-quit flag.
+The app redraws, then blocks on a message channel fed by two threads: an input thread
+forwarding terminal events, and the preview decoder signalling a finished decode (see §8).
+Only key **press** events are handled (key release/repeat events are ignored). All messages
+already queued are applied before the next redraw, so a burst of scroll events costs one
+frame. If the selected file's preview is still decoding after the events are applied, the loop
+waits up to **8 ms** for it so the image usually lands in the same frame as the selection
+change. The app exits the loop and quits when a quit action sets the quit flag.
 
 ---
 
@@ -316,20 +319,29 @@ only in Explorer mode; CLI diff mode (`dcr -d`) is unchanged and has no marks.
 - Requires a **Kitty-compatible terminal**. If the terminal lacks the capability, the pane
   shows `Preview requires a Kitty-compatible terminal`.
 - When available, the preview decodes the file's pixel data and renders **frame 0** as an
-  image.
-- **Scaling:** the image is fitted to the pane with its aspect ratio preserved. Images larger
-  than the pane are shrunk; images smaller than the pane (on both axes) are **upscaled**
-  (nearest-neighbour) to fill it rather than rendered at native size in a corner. The fitted
-  image is rebuilt only when the pane area changes (e.g. terminal resize, layout toggle).
+  8-bit grayscale (or RGB) image.
+- **Decoding** runs on a background thread; the UI never blocks on it. Only the most recent
+  request is served (intermediate selections from a fast scroll are dropped). Results are kept
+  in a **cache** of the last 32 files (invalidated when a file's size or mtime changes), and the
+  files around the selection (3 rows above and below in the DICOMDIR view, 3 files above and
+  below in the explorer) are **prefetched** so stepping through them shows the image instantly.
+- **Transport:** the image is sent to the terminal once, as a fast-compressed **PNG** through
+  the Kitty graphics protocol (wrapped in tmux passthrough when under tmux), as a virtual
+  placement over a fixed cell grid that the terminal scales to. The previous image is deleted
+  from the terminal in the same write.
+- **Scaling:** the cell grid is the largest one inside the pane with the image's aspect ratio.
+  Images smaller than the grid's pixel size are sent at **native resolution** and scaled up by
+  the terminal (never resampled by the app); larger images are shrunk (box filter) to the grid's
+  pixels first. The image is letterboxed with black to the grid's exact aspect ratio, so the
+  terminal's stretch onto the grid introduces no distortion. The encoded image is rebuilt only
+  when the pane area changes (e.g. terminal resize, layout toggle).
 - Error states (shown in red within the pane):
   - `No DICOM file path available` — no file path to decode.
   - `Failed to open DICOM file: <error>`
   - `Failed to decode pixel data: <error>`
   - `Failed to convert to image: <error>`
-- While a decode is in progress (or pending), the pane shows `Decoding...`.
-- **Debounce:** loading a new file clears the current image and, if the preview is shown,
-  schedules a re-decode after a **100 ms** debounce. The debounce is checked each event-loop
-  cycle, so rapid file changes do not trigger a decode for every intermediate selection.
+- While a decode is in progress, the pane shows `Decoding...`. Selecting a file clears the
+  current image and requests the new one immediately (served from the cache when possible).
 
 ### 8.1 Visual image diff (diff mode)
 
