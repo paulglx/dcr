@@ -19,8 +19,6 @@ impl Marks {
     }
 
     pub fn clear(&mut self) {
-        self.baseline = None;
-        self.modified = None;
-        self.message = None;
+        *self = Self::default();
     }
 }

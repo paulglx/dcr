@@ -177,8 +177,7 @@ impl App {
         };
         view.show_raw = !view.show_raw;
         view.clear_filter();
-        self.search.query.clear();
-        self.search.active = false;
+        self.search.reset();
         self.tags.clear_filter();
         self.schedule_preview();
     }
@@ -315,8 +314,7 @@ impl App {
         self.meta.clear();
         self.preview.clear();
         self.preview.pending = false;
-        self.search.query.clear();
-        self.search.active = false;
+        self.search.reset();
         if self.layout.focus == Focus::TagTable {
             self.layout.focus = Focus::Explorer;
         }
@@ -327,12 +325,7 @@ impl App {
     }
 
     pub fn mark_for_diff(&mut self, side: DiffSide) {
-        let path = self
-            .layout
-            .explorer
-            .as_ref()
-            .map(|e| e.current().path.clone());
-        if let Some(path) = path {
+        if let Some(path) = self.layout.current_path() {
             self.mark_path_for_diff(side, &path);
         }
     }

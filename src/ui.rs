@@ -1,5 +1,6 @@
 use crate::app::state::dirview::{DirView, Node, Row as DirRow};
 use crate::app::state::display_file_name;
+use crate::app::state::layout::explorer_scroll_offset;
 use crate::app::App;
 use crate::app::{AppMode, Focus};
 use crate::dicom::dicomdir::{
@@ -149,13 +150,7 @@ fn render_explorer_marks(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    // Mirror the scroll-offset computation used for mouse click resolution.
-    let selected = explorer.selected_idx();
-    let offset = if selected >= view_height {
-        selected - view_height + 1
-    } else {
-        0
-    };
+    let offset = explorer_scroll_offset(explorer.selected_idx(), view_height);
 
     for (i, file) in explorer
         .files()
