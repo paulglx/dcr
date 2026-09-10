@@ -4,13 +4,13 @@ use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
 use ratatui_image::FontSize;
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 pub struct Preview {
     pub show: bool,
     pub image: Option<StatefulProtocol>,
     pub error: Option<String>,
-    pub pending_since: Option<Instant>,
+    /// Set when the selection changed and `decode` must run before the next draw.
+    pub pending: bool,
     pub picker: Option<Picker>,
     /// Decoded image at native resolution; `image` is rebuilt from it whenever
     /// the pane area changes so small images can be upscaled to fill the pane.
@@ -25,7 +25,7 @@ impl Preview {
             show: true,
             image: None,
             error: None,
-            pending_since: None,
+            pending: false,
             picker,
             source: None,
             fitted_area: None,
@@ -54,7 +54,7 @@ impl Preview {
         if self.image.is_some() && self.fitted_area == Some(area) {
             return;
         }
-        let Some(mut picker) = self.picker.take() else {
+        let Some(picker) = self.picker.take() else {
             return;
         };
         let img = upscale_to_fill(source, picker.font_size(), area);
@@ -71,12 +71,12 @@ impl Preview {
         }
     }
 
-    pub fn tick_debounce(&mut self, path: Option<&Path>, baseline: Option<&Path>) {
-        if let Some(since) = self.pending_since {
-            if since.elapsed() >= Duration::from_millis(100) {
-                self.pending_since = None;
-                self.decode(path, baseline);
-            }
+    /// Decodes the pending preview, if any. Runs once per event-loop pass so the
+    /// image is ready for the very next draw.
+    pub fn decode_pending(&mut self, path: Option<&Path>, baseline: Option<&Path>) {
+        if self.pending {
+            self.pending = false;
+            self.decode(path, baseline);
         }
     }
 
@@ -125,8 +125,8 @@ impl Preview {
 /// `font_size` pixels each, when the image is smaller than the area on both axes.
 /// Larger images are returned unchanged; the widget's `Resize::Fit` shrinks them at render.
 pub fn upscale_to_fill(img: &DynamicImage, font_size: FontSize, area: Rect) -> DynamicImage {
-    let target_w = u32::from(area.width) * u32::from(font_size.0);
-    let target_h = u32::from(area.height) * u32::from(font_size.1);
+    let target_w = u32::from(area.width) * u32::from(font_size.width);
+    let target_h = u32::from(area.height) * u32::from(font_size.height);
     if target_w == 0 || target_h == 0 || img.width() >= target_w || img.height() >= target_h {
         return img.clone();
     }

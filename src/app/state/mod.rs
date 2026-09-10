@@ -10,10 +10,9 @@ use crate::dicom::DicomTag;
 use crate::validation::{SopClass, ValidationResult};
 use ratatui::layout::Rect;
 use ratatui::widgets::Block;
-use ratatui_explorer::{FileExplorer, Theme};
+use ratatui_explorer::{FileExplorerBuilder, Theme};
 use ratatui_image::picker::Picker;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 
 pub use self::layout::{AppMode, Focus};
 pub use self::marks::DiffSide;
@@ -103,7 +102,8 @@ impl App {
 
     pub fn new_explorer(picker: Option<Picker>) -> Self {
         let theme = Theme::default().with_block(Block::default());
-        let explorer = FileExplorer::with_theme(theme).expect("failed to create file explorer");
+        let explorer =
+            FileExplorerBuilder::build_with_theme(theme).expect("failed to create file explorer");
 
         Self {
             tags: Tags::default(),
@@ -174,9 +174,7 @@ impl App {
         }
 
         self.preview.clear();
-        if self.preview.show {
-            self.preview.pending_since = Some(Instant::now());
-        }
+        self.preview.pending = self.preview.show;
     }
 
     /// Switches to the directory view when `obj` (the loaded file) is a DICOMDIR.
@@ -194,11 +192,7 @@ impl App {
         self.dirview = Some(DirView::new(dir));
         // The DICOMDIR itself has no pixel data; the preview follows the selected record.
         self.preview.clear();
-        self.preview.pending_since = if self.preview.show {
-            Some(Instant::now())
-        } else {
-            None
-        };
+        self.preview.pending = self.preview.show;
     }
 
     /// True while the DICOMDIR tree (not the raw tag table) is displayed.
@@ -272,14 +266,10 @@ impl App {
         }
     }
 
-    /// Clears the preview and schedules a debounced re-decode of `preview_path()`.
+    /// Clears the preview and marks it for an immediate re-decode of `preview_path()`.
     fn schedule_preview(&mut self) {
         self.preview.clear();
-        self.preview.pending_since = if self.preview.show {
-            Some(Instant::now())
-        } else {
-            None
-        };
+        self.preview.pending = self.preview.show;
     }
 
     /// Runs `f` on the directory view and re-schedules the preview if the selection
@@ -359,7 +349,7 @@ impl App {
         self.tags.clear();
         self.meta.clear();
         self.preview.clear();
-        self.preview.pending_since = None;
+        self.preview.pending = false;
         self.search.query.clear();
         self.search.active = false;
         if self.layout.focus == Focus::TagTable {
@@ -376,7 +366,7 @@ impl App {
             .layout
             .explorer
             .as_ref()
-            .map(|e| e.current().path().to_path_buf());
+            .map(|e| e.current().path.clone());
         if let Some(path) = path {
             self.mark_path_for_diff(side, &path);
         }
@@ -458,15 +448,13 @@ impl App {
         self.tags.filter(&self.search.query);
 
         self.preview.clear();
-        if self.preview.show {
-            self.preview.pending_since = Some(Instant::now());
-        }
+        self.preview.pending = self.preview.show;
     }
 
-    pub fn tick_preview_debounce(&mut self) {
+    pub fn decode_pending_preview(&mut self) {
         let path = self.preview_path();
         self.preview
-            .tick_debounce(path.as_deref(), self.meta.baseline_path.as_deref());
+            .decode_pending(path.as_deref(), self.meta.baseline_path.as_deref());
     }
 
     pub fn toggle_preview(&mut self) {

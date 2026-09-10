@@ -7,7 +7,9 @@ use crate::dicom::dicomdir::{
     SERIES_DESCRIPTION, SERIES_NUMBER, STUDY_DATE, STUDY_DESCRIPTION,
 };
 use crate::dicom::{parse_dicom_datetime_delta_ms, DiffStatus};
+use crate::textdiff::{word_diff, Change};
 use crate::validation::{SopClass, ValidationResult};
+use ratatui::widgets::FrameExt;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -16,7 +18,6 @@ use ratatui::{
     Frame,
 };
 use ratatui_image::StatefulImage;
-use crate::textdiff::{word_diff, Change};
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     match app.layout.mode {
@@ -164,9 +165,9 @@ fn render_explorer_marks(frame: &mut Frame, area: Rect, app: &App) {
         .take(view_height)
     {
         // Badge color follows the diffing direction: baseline red, modified green (§7).
-        let (badge, color) = if app.marks.baseline.as_deref() == Some(file.path()) {
+        let (badge, color) = if app.marks.baseline.as_deref() == Some(file.path.as_path()) {
             (" A ", Color::Red)
-        } else if app.marks.modified.as_deref() == Some(file.path()) {
+        } else if app.marks.modified.as_deref() == Some(file.path.as_path()) {
             (" B ", Color::Green)
         } else {
             continue;
@@ -923,7 +924,7 @@ fn render_preview_pane(frame: &mut Frame, area: Rect, app: &mut App) {
         frame.render_widget(block, area);
         app.preview.fit_to(inner);
         if let Some(ref mut protocol) = app.preview.image {
-            let image = StatefulImage::new(None);
+            let image = StatefulImage::new();
             frame.render_stateful_widget(image, inner, protocol);
         }
     } else {

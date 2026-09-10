@@ -75,9 +75,10 @@ mod upscale {
     use super::gray_image;
     use dcr::app::state::preview::upscale_to_fill;
     use ratatui::layout::Rect;
+    use ratatui_image::FontSize;
 
     // 10x20 px cells; a 40x10 cell pane is 400x200 px.
-    const FONT: (u16, u16) = (10, 20);
+    const FONT: FontSize = FontSize::new(10, 20);
     const PANE: Rect = Rect {
         x: 0,
         y: 0,

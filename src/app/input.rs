@@ -80,7 +80,7 @@ impl App {
                 _ => {}
             }
         }
-        self.tick_preview_debounce();
+        self.decode_pending_preview();
         Ok(())
     }
 
@@ -250,7 +250,7 @@ impl App {
             if clicked >= explorer.files().len() {
                 return;
             }
-            if clicked == selected && explorer.current().is_dir() {
+            if clicked == selected && explorer.current().is_dir {
                 let _ = explorer.handle(Input::Right);
             } else {
                 explorer.set_selected_idx(clicked);
@@ -269,7 +269,7 @@ impl App {
             .layout
             .explorer
             .as_ref()
-            .map(|e| e.current().path().to_path_buf());
+            .map(|e| e.current().path.clone());
 
         match current_path {
             Some(path) if path.is_file() => {
