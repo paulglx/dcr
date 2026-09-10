@@ -1,4 +1,5 @@
 use crate::app::state::dirview::{DirView, Node, Row as DirRow};
+use crate::app::state::display_file_name;
 use crate::app::App;
 use crate::app::{AppMode, Focus};
 use crate::dicom::dicomdir::{
@@ -219,12 +220,7 @@ fn render_dir_view(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: bo
         return;
     };
 
-    let folder = view
-        .dir
-        .base_dir
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| view.dir.base_dir.display().to_string());
+    let folder = display_file_name(&view.dir.base_dir);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color))
@@ -890,19 +886,14 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn pending_mark_hint(app: &App) -> Option<String> {
-    let file_name = |path: &std::path::Path| {
-        path.file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string_lossy().to_string())
-    };
     match (&app.marks.baseline, &app.marks.modified) {
         (Some(a), None) => Some(format!(
             " A: {} — press 'b' on another file to diff | Esc: Cancel ",
-            file_name(a)
+            display_file_name(a)
         )),
         (None, Some(b)) => Some(format!(
             " B: {} — press 'a' on another file to diff | Esc: Cancel ",
-            file_name(b)
+            display_file_name(b)
         )),
         _ => None,
     }

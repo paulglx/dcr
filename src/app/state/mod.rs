@@ -509,7 +509,8 @@ fn around(selected: usize, len: usize, reach: usize) -> Vec<usize> {
     out
 }
 
-fn display_file_name(path: &Path) -> String {
+/// Last path component for titles and messages; the whole path if there is none.
+pub fn display_file_name(path: &Path) -> String {
     path.file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| path.to_string_lossy().to_string())
