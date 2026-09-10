@@ -1,10 +1,5 @@
-mod app;
-mod dicom;
-mod textdiff;
-mod ui;
-mod validation;
-
-use app::App;
+use dcr::app::App;
+use dcr::{dicom, ui, validation};
 use clap::{value_parser, Arg, ArgAction, Command};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
