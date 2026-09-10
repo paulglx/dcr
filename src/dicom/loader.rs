@@ -1,147 +1,85 @@
 use super::tag::DicomTag;
 use dicom_core::dictionary::DataDictionary;
-use dicom_core::header::HasLength;
-use dicom_core::header::Header;
+use dicom_core::header::{HasLength, Header};
+use dicom_core::DataElement;
 use dicom_dictionary_std::StandardDataDictionary;
-use dicom_object::{open_file, FileDicomObject, InMemDicomObject};
+use dicom_object::mem::InMemElement;
+use dicom_object::{FileDicomObject, InMemDicomObject};
 use std::path::Path;
 
 pub fn load_dicom_file<P: AsRef<Path>>(
     path: P,
 ) -> Result<Vec<DicomTag>, Box<dyn std::error::Error>> {
-    let obj = open_file(path)?;
-    Ok(extract_tags(&obj))
+    Ok(extract_tags(&dicom_object::open_file(path)?))
 }
 
+/// Flattens the file meta group and the data set of `obj` into a tag tree.
 pub fn extract_tags(obj: &FileDicomObject<InMemDicomObject>) -> Vec<DicomTag> {
-    let mut tags = Vec::new();
+    obj.meta()
+        .to_element_iter()
+        .map(|element| element_to_tag(&element, Vec::new(), 0))
+        .chain(obj.iter().map(|element| inmem_element_to_tag(element, 0)))
+        .collect()
+}
 
-    for element in obj.meta().to_element_iter() {
-        let tag = element.tag();
-        let tag_str = format!("({:04X},{:04X})", tag.group(), tag.element());
+/// Converts a data set element at `depth`; a sequence's items become its children.
+fn inmem_element_to_tag(element: &InMemElement, depth: usize) -> DicomTag {
+    let children = element
+        .value()
+        .items()
+        .map(|items| extract_sequence_items(items, depth + 1))
+        .unwrap_or_default();
+    element_to_tag(element, children, depth)
+}
 
-        let name = StandardDataDictionary
+fn element_to_tag<I: HasLength, P>(
+    element: &DataElement<I, P>,
+    children: Vec<DicomTag>,
+    depth: usize,
+) -> DicomTag {
+    let tag = element.tag();
+    DicomTag {
+        tag: format!("({:04X},{:04X})", tag.group(), tag.element()),
+        name: StandardDataDictionary
             .by_tag(tag)
             .map(|entry| entry.alias.to_string())
-            .unwrap_or_default();
-
-        let vr = element.vr().to_string();
-        let value = format_value(element.value());
-
-        tags.push(DicomTag {
-            tag: tag_str,
-            name,
-            vr: vr.to_string(),
-            value,
-            baseline_value: None,
-            depth: 0,
-            is_expandable: false,
-            is_expanded: false,
-            children: Vec::new(),
-            diff_status: None,
-        });
+            .unwrap_or_default(),
+        // `VR::to_string` is inherent and yields `&str`.
+        vr: element.vr().to_string().to_owned(),
+        value: format_value(element.value()),
+        baseline_value: None,
+        depth,
+        is_expandable: !children.is_empty(),
+        is_expanded: false,
+        children,
+        diff_status: None,
     }
-
-    for element in obj {
-        let tag = element.tag();
-        let tag_str = format!("({:04X},{:04X})", tag.group(), tag.element());
-
-        let name = StandardDataDictionary
-            .by_tag(tag)
-            .map(|entry| entry.alias.to_string())
-            .unwrap_or_default();
-
-        let vr = element.vr().to_string();
-
-        let (value, children, is_expandable) = if let Some(items) = element.value().items() {
-            let children = extract_sequence_items(items, 1);
-            let is_expandable = !children.is_empty();
-            let value = format!("<Sequence with {} item(s)>", items.len());
-            (value, children, is_expandable)
-        } else {
-            (format_value(element.value()), Vec::new(), false)
-        };
-
-        tags.push(DicomTag {
-            tag: tag_str,
-            name,
-            vr: vr.to_string(),
-            value,
-            baseline_value: None,
-            depth: 0,
-            is_expandable,
-            is_expanded: false,
-            children,
-            diff_status: None,
-        });
-    }
-
-    tags
 }
 
 fn extract_sequence_items(items: &[InMemDicomObject], depth: usize) -> Vec<DicomTag> {
-    let mut children = Vec::new();
-
-    for (item_idx, item) in items.iter().enumerate() {
-        let item_children = extract_tags_from_inmem_object(item, depth + 1);
-        // DICOMDIR records get a readable label (e.g. `SERIES · #3 CT`) instead of nothing.
-        let name = super::dicomdir::record_summary(item).unwrap_or_default();
-        let item_header = DicomTag {
-            tag: format!("Item #{}", item_idx + 1),
-            name,
-            vr: String::new(),
-            value: format!("<{} element(s)>", item.into_iter().count()),
-            baseline_value: None,
-            depth,
-            is_expandable: !item_children.is_empty(),
-            is_expanded: false,
-            children: item_children,
-            diff_status: None,
-        };
-        children.push(item_header);
-    }
-
-    children
-}
-
-fn extract_tags_from_inmem_object(obj: &InMemDicomObject, depth: usize) -> Vec<DicomTag> {
-    let mut tags = Vec::new();
-
-    for element in obj {
-        let tag = element.tag();
-        let tag_str = format!("({:04X},{:04X})", tag.group(), tag.element());
-
-        let name = StandardDataDictionary
-            .by_tag(tag)
-            .map(|entry| entry.alias.to_string())
-            .unwrap_or_default();
-
-        let vr = element.vr().to_string();
-
-        let (value, children, is_expandable) = if let Some(items) = element.value().items() {
-            let children = extract_sequence_items(items, depth + 1);
-            let is_expandable = !children.is_empty();
-            let value = format!("<Sequence with {} item(s)>", items.len());
-            (value, children, is_expandable)
-        } else {
-            (format_value(element.value()), Vec::new(), false)
-        };
-
-        tags.push(DicomTag {
-            tag: tag_str,
-            name,
-            vr: vr.to_string(),
-            value,
-            baseline_value: None,
-            depth,
-            is_expandable,
-            is_expanded: false,
-            children,
-            diff_status: None,
-        });
-    }
-
-    tags
+    items
+        .iter()
+        .enumerate()
+        .map(|(item_idx, item)| {
+            let children: Vec<DicomTag> = item
+                .iter()
+                .map(|element| inmem_element_to_tag(element, depth + 1))
+                .collect();
+            DicomTag {
+                tag: format!("Item #{}", item_idx + 1),
+                // DICOMDIR records get a readable label (e.g. `SERIES · #3 CT`) instead of nothing.
+                name: super::dicomdir::record_summary(item).unwrap_or_default(),
+                vr: String::new(),
+                value: format!("<{} element(s)>", item.iter().count()),
+                baseline_value: None,
+                depth,
+                is_expandable: !children.is_empty(),
+                is_expanded: false,
+                children,
+                diff_status: None,
+            }
+        })
+        .collect()
 }
 
 fn format_value<I: HasLength, P>(value: &dicom_core::value::Value<I, P>) -> String {
