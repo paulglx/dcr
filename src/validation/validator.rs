@@ -13,27 +13,14 @@ pub fn validate_type1_fields<P: AsRef<Path>>(
     Ok(validate_type1_fields_from_obj(&obj))
 }
 
+/// Checks the Type 1 attributes required by the object's SOP class. Only CT and MR image
+/// storage have rules; anything else is `NotApplicable`.
 pub fn validate_type1_fields_from_obj(obj: &FileDicomObject<InMemDicomObject>) -> ValidationResult {
-    let sop_class_uid = obj
-        .element(tags::SOP_CLASS_UID)
-        .ok()
-        .and_then(|e| e.to_str().ok())
-        .map(|s| s.trim().to_string());
-
-    let sop_class_uid = match sop_class_uid {
-        Some(uid) => uid,
-        None => return ValidationResult::NotApplicable,
+    let modality_tags: &[(Tag, &str)] = match get_sop_class_from_obj(obj) {
+        SopClass::Ct => CT_IMAGE_TYPE1_TAGS,
+        SopClass::Mr => MR_IMAGE_TYPE1_TAGS,
+        SopClass::Other(_) | SopClass::Unknown => return ValidationResult::NotApplicable,
     };
-
-    let modality_tags: &[(Tag, &str)] = if sop_class_uid == CT_IMAGE_STORAGE {
-        CT_IMAGE_TYPE1_TAGS
-    } else if sop_class_uid == MR_IMAGE_STORAGE {
-        MR_IMAGE_TYPE1_TAGS
-    } else {
-        return ValidationResult::NotApplicable;
-    };
-
-    let mut missing_tags = Vec::new();
 
     let all_tag_groups: &[&[(Tag, &str)]] = &[
         SOP_COMMON_TYPE1_TAGS,
@@ -45,13 +32,12 @@ pub fn validate_type1_fields_from_obj(obj: &FileDicomObject<InMemDicomObject>) -
         modality_tags,
     ];
 
-    for group in all_tag_groups {
-        for (tag, name) in *group {
-            if !is_tag_present(obj, *tag) {
-                missing_tags.push(name.to_string());
-            }
-        }
-    }
+    let missing_tags: Vec<String> = all_tag_groups
+        .iter()
+        .flat_map(|group| group.iter())
+        .filter(|(tag, _)| !is_tag_present(obj, *tag))
+        .map(|(_, name)| name.to_string())
+        .collect();
 
     if missing_tags.is_empty() {
         ValidationResult::Valid
@@ -60,22 +46,14 @@ pub fn validate_type1_fields_from_obj(obj: &FileDicomObject<InMemDicomObject>) -
     }
 }
 
+/// Present and, for string values, non-blank.
 fn is_tag_present(obj: &FileDicomObject<InMemDicomObject>, tag: Tag) -> bool {
     obj.element(tag)
         .ok()
-        .map(|e| {
-            if let Ok(s) = e.to_str() {
-                !s.trim().is_empty()
-            } else {
-                true
-            }
-        })
-        .unwrap_or(false)
+        .is_some_and(|e| e.to_str().map_or(true, |s| !s.trim().is_empty()))
 }
 
-pub fn get_sop_class<P: AsRef<Path>>(
-    path: P,
-) -> Result<SopClass, Box<dyn std::error::Error>> {
+pub fn get_sop_class<P: AsRef<Path>>(path: P) -> Result<SopClass, Box<dyn std::error::Error>> {
     let obj = open_file(path)?;
     Ok(get_sop_class_from_obj(&obj))
 }
