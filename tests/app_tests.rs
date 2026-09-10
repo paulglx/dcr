@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use dcr::app::App;
 use dcr::dicom::DicomTag;
@@ -422,33 +422,35 @@ fn collapse_parent_on_root_is_noop() {
     assert_eq!(app.tags.table_state.selected(), Some(0));
 }
 
-// --- new_with_diff constructor tests ---
+// --- enter_diff tests ---
 
 #[test]
-fn new_with_diff_stores_fields_correctly() {
-    let tags = vec![
-        create_test_tag("(0010,0010)", "PatientName", 0, false, Vec::new()),
-    ];
-    let app = App::new_with_diff(
-        tags,
-        "baseline.dcm".to_string(),
-        Some("modified.dcm".to_string()),
-        ValidationResult::Valid,
-        SopClass::Ct,
-        true,
-        Some(PathBuf::from("/tmp/test.dcm")),
-        Some(PathBuf::from("/tmp/base.dcm")),
-        None,
-    );
+fn enter_diff_stores_fields_correctly() {
+    let baseline = PathBuf::from("tests/fixtures/dicom/ct-tap.dcm");
+    let modified = PathBuf::from("tests/fixtures/dicom/ct-tap-with-missing-data.dcm");
+    let mut app = App::new_direct(None);
+    app.enter_diff(&baseline, &modified).expect("fixtures open");
 
     assert!(app.meta.diff_mode);
-    assert_eq!(app.meta.modified_name, Some("modified.dcm".to_string()));
-    assert_eq!(app.meta.path, Some(PathBuf::from("/tmp/test.dcm")));
+    assert_eq!(app.meta.name, "ct-tap.dcm");
     assert_eq!(
-        app.meta.baseline_path,
-        Some(PathBuf::from("/tmp/base.dcm"))
+        app.meta.modified_name,
+        Some("ct-tap-with-missing-data.dcm".to_string())
     );
-    assert_eq!(app.meta.name, "baseline.dcm");
-    assert_eq!(app.tags.visible.len(), 1);
+    assert_eq!(app.meta.path, Some(modified));
+    assert_eq!(app.meta.baseline_path, Some(baseline));
+    assert!(!app.tags.visible.is_empty());
     assert_eq!(app.tags.table_state.selected(), Some(0));
+}
+
+#[test]
+fn enter_diff_on_unreadable_file_leaves_state_untouched() {
+    let mut app = App::new_direct(None);
+    let err = app.enter_diff(
+        Path::new("tests/fixtures/dicom/ct-tap.dcm"),
+        Path::new("tests/fixtures/not-a-dicom.txt"),
+    );
+    assert!(err.is_err());
+    assert!(!app.meta.diff_mode);
+    assert!(app.tags.visible.is_empty());
 }

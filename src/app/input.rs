@@ -19,7 +19,8 @@ fn key_to_explorer_input(code: KeyCode) -> Input {
 }
 
 impl App {
-    /// Applies one terminal event, then requests the preview it may have changed.
+    /// Applies one terminal event. Any preview change it causes is picked up by the next
+    /// `request_pending_preview`.
     pub fn handle_event(&mut self, event: Event) {
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
@@ -76,7 +77,6 @@ impl App {
             },
             _ => {}
         }
-        self.request_pending_preview();
     }
 
     fn clear_search(&mut self) {

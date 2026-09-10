@@ -40,107 +40,82 @@ pub struct App {
 }
 
 impl App {
+    /// Direct-mode app already holding `tags` (used by tests and by `main` before loading).
     pub fn new(
         tags: Vec<DicomTag>,
         file_name: String,
         validation_result: ValidationResult,
         sop_class: SopClass,
     ) -> Self {
-        Self::new_with_diff(
-            tags,
-            file_name,
-            None,
-            validation_result,
-            sop_class,
-            false,
-            None,
-            None,
-            None,
-        )
+        let mut app = Self::new_direct(None);
+        app.tags = Tags::from_tags(tags);
+        app.meta.name = file_name;
+        app.meta.validation_result = validation_result;
+        app.meta.sop_class = sop_class;
+        app
     }
 
-    pub fn new_with_diff(
-        tags: Vec<DicomTag>,
-        file_name: String,
-        modified_name: Option<String>,
-        validation_result: ValidationResult,
-        sop_class: SopClass,
-        diff_mode: bool,
-        dicom_file_path: Option<PathBuf>,
-        baseline_path: Option<PathBuf>,
-        picker: Option<Picker>,
-    ) -> Self {
-        let mut app = Self {
-            tags: Tags::from_tags(tags),
-            search: Search::default(),
-            preview: Preview::new(picker),
-            marks: Marks::default(),
-            meta: FileMeta {
-                path: dicom_file_path,
-                baseline_path,
-                name: file_name,
-                selected_path: None,
-                validation_result,
-                sop_class,
-                diff_mode,
-                modified_name,
-            },
-            layout: Layout {
+    /// Empty app in direct mode; load a file with `load_dicom_file` or `enter_diff`.
+    pub fn new_direct(picker: Option<Picker>) -> Self {
+        Self::with_layout(
+            picker,
+            Layout {
                 mode: AppMode::Direct,
                 focus: Focus::TagTable,
                 explorer: None,
                 explorer_area: Rect::default(),
             },
-            dirview: None,
-            dir_return: None,
-            should_quit: false,
-        };
-        app.preview
-            .request(app.meta.path.as_deref(), app.meta.baseline_path.as_deref());
-        app
+        )
     }
 
     pub fn new_explorer(picker: Option<Picker>) -> Self {
         let theme = Theme::default().with_block(Block::default());
         let explorer =
             FileExplorerBuilder::build_with_theme(theme).expect("failed to create file explorer");
-
-        Self {
-            tags: Tags::default(),
-            search: Search::default(),
-            preview: Preview::new(picker),
-            marks: Marks::default(),
-            meta: FileMeta {
-                path: None,
-                baseline_path: None,
-                name: String::new(),
-                selected_path: None,
-                validation_result: ValidationResult::NotApplicable,
-                sop_class: SopClass::Unknown,
-                diff_mode: false,
-                modified_name: None,
-            },
-            layout: Layout {
+        Self::with_layout(
+            picker,
+            Layout {
                 mode: AppMode::Explorer,
                 focus: Focus::Explorer,
                 explorer: Some(explorer),
                 explorer_area: Rect::default(),
             },
+        )
+    }
+
+    fn with_layout(picker: Option<Picker>, layout: Layout) -> Self {
+        Self {
+            tags: Tags::default(),
+            search: Search::default(),
+            preview: Preview::new(picker),
+            marks: Marks::default(),
+            meta: FileMeta::default(),
+            layout,
             dirview: None,
             dir_return: None,
             should_quit: false,
         }
     }
 
+    /// Loads `path`, showing an empty view if it cannot be opened.
     pub fn load_dicom_file(&mut self, path: &Path) {
-        self.load_file_inner(path, None);
+        let _ = self.load_file_inner(path, None);
+    }
+
+    /// Like `load_dicom_file` but reports why the file could not be opened.
+    pub fn try_load_dicom_file(&mut self, path: &Path) -> Result<(), dicom_object::ReadError> {
+        self.load_file_inner(path, None)
     }
 
     /// Loads `path`; `reuse` carries a previously built directory view for the same file
     /// so that returning to a DICOMDIR keeps its expansion and selection.
-    fn load_file_inner(&mut self, path: &Path, reuse: Option<DirView>) {
+    fn load_file_inner(
+        &mut self,
+        path: &Path,
+        reuse: Option<DirView>,
+    ) -> Result<(), dicom_object::ReadError> {
         if self.meta.selected_path.as_deref() == Some(path) {
-            return;
+            return Ok(());
         }
 
         self.dirview = None;
@@ -151,21 +126,16 @@ impl App {
 
         let obj = match dicom_object::open_file(path) {
             Ok(obj) => obj,
-            Err(_) => {
+            Err(e) => {
                 self.clear_dicom_display();
-                return;
+                return Err(e);
             }
         };
 
-        let tags = crate::dicom::extract_tags(&obj);
+        self.tags.all = crate::dicom::extract_tags(&obj);
         self.meta.sop_class = crate::validation::get_sop_class_from_obj(&obj);
         self.meta.validation_result = crate::validation::validate_type1_fields_from_obj(&obj);
-        self.meta.name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        self.tags.all = tags;
+        self.meta.name = display_file_name(path);
         self.tags.filter(&self.search.query);
 
         match reuse {
@@ -173,8 +143,8 @@ impl App {
             None => self.attach_dicomdir(&obj),
         }
 
-        self.preview.clear();
-        self.preview.pending = self.preview.show;
+        self.schedule_preview();
+        Ok(())
     }
 
     /// Switches to the directory view when `obj` (the loaded file) is a DICOMDIR.
@@ -191,8 +161,7 @@ impl App {
         let dir = crate::dicom::DicomDir::from_object(&path, obj);
         self.dirview = Some(DirView::new(dir));
         // The DICOMDIR itself has no pixel data; the preview follows the selected record.
-        self.preview.clear();
-        self.preview.pending = self.preview.show;
+        self.schedule_preview();
     }
 
     /// True while the DICOMDIR tree (not the raw tag table) is displayed.
@@ -207,12 +176,10 @@ impl App {
             return;
         };
         view.show_raw = !view.show_raw;
+        view.clear_filter();
         self.search.query.clear();
         self.search.active = false;
         self.tags.clear_filter();
-        if let Some(view) = self.dirview.as_mut() {
-            view.clear_filter();
-        }
         self.schedule_preview();
     }
 
@@ -228,10 +195,7 @@ impl App {
         if !target.is_file() {
             self.marks.message = Some(format!(
                 "Referenced file not found: {}",
-                target
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_default()
+                display_file_name(&target)
             ));
             return;
         }
@@ -239,7 +203,8 @@ impl App {
             return;
         };
         self.meta.selected_path = None;
-        self.load_file_inner(&target, None);
+        // A referenced file that fails to open leaves an empty view; Esc still returns.
+        let _ = self.load_file_inner(&target, None);
         self.dir_return = Some((dir_path, view));
         if self.layout.mode == AppMode::Explorer {
             self.layout.focus = Focus::TagTable;
@@ -252,7 +217,7 @@ impl App {
             return false;
         };
         self.meta.selected_path = None;
-        self.load_file_inner(&path, Some(view));
+        let _ = self.load_file_inner(&path, Some(view));
         true
     }
 
@@ -440,32 +405,40 @@ impl App {
         else {
             return;
         };
+        if let Err(e) = self.enter_diff(&baseline, &modified) {
+            self.marks.message = Some(format!("Diff failed: {e}"));
+        }
+    }
 
-        let tags = match crate::dicom::compare_dicom_files(&baseline, &modified) {
-            Ok(tags) => tags,
-            Err(e) => {
-                self.marks.message = Some(format!("Diff failed: {e}"));
-                return;
-            }
-        };
+    /// Switches to diff mode showing `baseline` (A) against `modified` (B). On error the
+    /// current view is left untouched.
+    pub fn enter_diff(
+        &mut self,
+        baseline: &Path,
+        modified: &Path,
+    ) -> Result<(), dicom_object::ReadError> {
+        let baseline_obj = dicom_object::open_file(baseline)?;
+        let modified_obj = dicom_object::open_file(modified)?;
 
         self.meta.diff_mode = true;
-        self.meta.name = display_file_name(&baseline);
-        self.meta.modified_name = Some(display_file_name(&modified));
+        self.meta.name = display_file_name(baseline);
+        self.meta.modified_name = Some(display_file_name(modified));
         self.meta.selected_path = None;
         // Validation follows the modified file (B); the preview blends A and B.
-        self.meta.path = Some(modified.clone());
-        self.meta.baseline_path = Some(baseline.clone());
-        self.meta.sop_class =
-            crate::validation::get_sop_class(&modified).unwrap_or(SopClass::Unknown);
-        self.meta.validation_result = crate::validation::validate_type1_fields(&modified)
-            .unwrap_or(ValidationResult::NotApplicable);
+        self.meta.path = Some(modified.to_path_buf());
+        self.meta.baseline_path = Some(baseline.to_path_buf());
+        self.meta.sop_class = crate::validation::get_sop_class_from_obj(&modified_obj);
+        self.meta.validation_result =
+            crate::validation::validate_type1_fields_from_obj(&modified_obj);
 
-        self.tags.all = tags;
+        self.tags.all = crate::dicom::diff_tags(
+            crate::dicom::extract_tags(&baseline_obj),
+            crate::dicom::extract_tags(&modified_obj),
+        );
         self.tags.filter(&self.search.query);
 
-        self.preview.clear();
-        self.preview.pending = self.preview.show;
+        self.schedule_preview();
+        Ok(())
     }
 
     /// Requests the preview scheduled by the last selection change, if any, and warms

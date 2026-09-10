@@ -1,6 +1,7 @@
 use crate::validation::{SopClass, ValidationResult};
 use std::path::PathBuf;
 
+#[derive(Default)]
 pub struct FileMeta {
     pub path: Option<PathBuf>,
     pub baseline_path: Option<PathBuf>,
@@ -14,11 +15,6 @@ pub struct FileMeta {
 
 impl FileMeta {
     pub fn clear(&mut self) {
-        self.path = None;
-        self.baseline_path = None;
-        self.name = String::new();
-        self.selected_path = None;
-        self.validation_result = ValidationResult::NotApplicable;
-        self.sop_class = SopClass::Unknown;
+        *self = Self::default();
     }
 }

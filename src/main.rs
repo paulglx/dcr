@@ -1,11 +1,11 @@
-use dcr::app::App;
-use dcr::{dicom, ui, validation};
 use clap::{value_parser, Arg, ArgAction, Command};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use dcr::app::App;
+use dcr::ui;
 use ratatui::prelude::*;
 use ratatui_image::picker::Picker;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -93,68 +93,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let picker = Picker::from_query_stdio().ok();
 
-    let mut app = if let Some(diff_files) = &args.diff {
-        if diff_files.len() != 2 {
-            return Err("--diff requires exactly two file arguments".into());
-        }
-        let baseline_path = &diff_files[0];
-        let modified_path = &diff_files[1];
-        validate_path(baseline_path)?;
-        validate_path(modified_path)?;
-
-        let tags = dicom::compare_dicom_files(baseline_path, modified_path)?;
-
-        let baseline_name = baseline_path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| baseline_path.to_string_lossy().to_string());
-        let modified_name = modified_path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| modified_path.to_string_lossy().to_string());
-
-        let sop_class =
-            validation::get_sop_class(modified_path).unwrap_or(validation::SopClass::Unknown);
-        let validation_result = validation::validate_type1_fields(modified_path)
-            .unwrap_or(validation::ValidationResult::NotApplicable);
-
-        let mut app = App::new_with_diff(
-            tags,
-            baseline_name,
-            Some(modified_name),
-            validation_result,
-            sop_class,
-            true,
-            Some(modified_path.clone()),
-            Some(baseline_path.clone()),
-            picker,
-        );
+    let mut app = if let Some([baseline, modified]) = args.diff.as_deref() {
+        validate_path(baseline)?;
+        validate_path(modified)?;
+        let mut app = App::new_direct(picker);
+        app.enter_diff(baseline, modified)?;
         app.set_changes_only(args.changes_only);
         app
-    } else if let Some(file) = args.file {
-        validate_path(&file)?;
-        let obj = ::dicom_object::open_file(&file)?;
-        let tags = dicom::extract_tags(&obj);
-        let sop_class = validation::get_sop_class_from_obj(&obj);
-        let validation_result = validation::validate_type1_fields_from_obj(&obj);
-
-        let file_name = file
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| file.to_string_lossy().to_string());
-
-        let mut app = App::new_with_diff(
-            tags,
-            file_name,
-            None,
-            validation_result,
-            sop_class,
-            false,
-            Some(file),
-            None,
-            picker,
-        );
-        app.attach_dicomdir(&obj);
+    } else if let Some(file) = &args.file {
+        validate_path(file)?;
+        let mut app = App::new_direct(picker);
+        app.try_load_dicom_file(file)?;
         app
     } else {
         App::new_explorer(picker)
@@ -195,6 +144,7 @@ fn run_app<B: Backend<Error = io::Error>>(
     });
 
     loop {
+        app.request_pending_preview();
         app.preview.poll_results();
         terminal.draw(|frame| ui::render(frame, app))?;
 
@@ -208,6 +158,8 @@ fn run_app<B: Backend<Error = io::Error>>(
             handle_msg(app, msg);
         }
 
+        // Start the decode now so the grace wait below can catch it.
+        app.request_pending_preview();
         let deadline = Instant::now() + PREVIEW_GRACE;
         while app.preview.is_loading() && !app.should_quit {
             let Some(left) = deadline.checked_duration_since(Instant::now()) else {
