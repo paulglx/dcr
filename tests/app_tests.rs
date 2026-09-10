@@ -198,7 +198,7 @@ fn test_app_state_initialization() {
     }
     
     match &app.meta.sop_class {
-        SopClass::Mr => assert!(true),
+        SopClass::Mr => {}
         _ => panic!("Expected Mr SOP class"),
     }
 }

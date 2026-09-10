@@ -119,10 +119,10 @@ mod tests {
 
     #[test]
     fn leap_years_are_handled() {
-        assert_eq!(parse_da("20240229").is_some(), true);
+        assert!(parse_da("20240229").is_some());
         assert_eq!(parse_da("20230229"), None);
         assert_eq!(parse_da("19000229"), None);
-        assert_eq!(parse_da("20000229").is_some(), true);
+        assert!(parse_da("20000229").is_some());
     }
 
     #[test]

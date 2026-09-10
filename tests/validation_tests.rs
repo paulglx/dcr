@@ -4,7 +4,7 @@ use dcr::validation::{SopClass, ValidationResult};
 fn test_sop_class_ct_variant() {
     let sop = SopClass::Ct;
     match sop {
-        SopClass::Ct => assert!(true),
+        SopClass::Ct => {}
         _ => panic!("Expected SopClass::Ct"),
     }
 }
@@ -13,7 +13,7 @@ fn test_sop_class_ct_variant() {
 fn test_sop_class_mr_variant() {
     let sop = SopClass::Mr;
     match sop {
-        SopClass::Mr => assert!(true),
+        SopClass::Mr => {}
         _ => panic!("Expected SopClass::Mr"),
     }
 }
@@ -32,7 +32,7 @@ fn test_sop_class_other_variant() {
 fn test_sop_class_unknown_variant() {
     let sop = SopClass::Unknown;
     match sop {
-        SopClass::Unknown => assert!(true),
+        SopClass::Unknown => {}
         _ => panic!("Expected SopClass::Unknown"),
     }
 }
@@ -42,7 +42,7 @@ fn test_sop_class_clone() {
     let sop1 = SopClass::Ct;
     let sop2 = sop1.clone();
     match (sop1, sop2) {
-        (SopClass::Ct, SopClass::Ct) => assert!(true),
+        (SopClass::Ct, SopClass::Ct) => {}
         _ => panic!("Clone should preserve variant"),
     }
 }
@@ -51,7 +51,7 @@ fn test_sop_class_clone() {
 fn test_validation_result_valid() {
     let result = ValidationResult::Valid;
     match result {
-        ValidationResult::Valid => assert!(true),
+        ValidationResult::Valid => {}
         _ => panic!("Expected ValidationResult::Valid"),
     }
 }
@@ -74,7 +74,7 @@ fn test_validation_result_invalid() {
 fn test_validation_result_not_applicable() {
     let result = ValidationResult::NotApplicable;
     match result {
-        ValidationResult::NotApplicable => assert!(true),
+        ValidationResult::NotApplicable => {}
         _ => panic!("Expected ValidationResult::NotApplicable"),
     }
 }
@@ -84,7 +84,7 @@ fn test_validation_result_clone() {
     let result1 = ValidationResult::Valid;
     let result2 = result1.clone();
     match (result1, result2) {
-        (ValidationResult::Valid, ValidationResult::Valid) => assert!(true),
+        (ValidationResult::Valid, ValidationResult::Valid) => {}
         _ => panic!("Clone should preserve variant"),
     }
 }

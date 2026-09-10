@@ -162,11 +162,7 @@ impl Tags {
     }
 
     fn active_tags_mut(&mut self) -> &mut Vec<DicomTag> {
-        if self.filtered.is_some() {
-            self.filtered.as_mut().unwrap()
-        } else {
-            &mut self.all
-        }
+        self.filtered.as_mut().unwrap_or(&mut self.all)
     }
 
     fn build_path_to_tag(&self, visible_idx: usize) -> Vec<usize> {
