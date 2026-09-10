@@ -46,8 +46,10 @@ impl Stamp {
     }
 }
 
-pub type Decoded = Arc<Result<DynamicImage, String>>;
+/// A decode result. The image is shared between the cache and the pane, never copied.
+pub type Decoded = Result<Arc<DynamicImage>, String>;
 
+/// A finished decode, as sent back by the worker and as kept in the cache.
 struct CacheEntry {
     key: Key,
     stamp: Stamp,
@@ -60,21 +62,15 @@ struct Job {
     urgent: bool,
 }
 
-struct Done {
-    key: Key,
-    stamp: Stamp,
-    value: Decoded,
-}
-
 struct Worker {
     jobs: Sender<Job>,
-    done: Receiver<Done>,
+    done: Receiver<CacheEntry>,
 }
 
 impl Worker {
     fn spawn(wake: Arc<OnceLock<Waker>>) -> Self {
         let (jobs, job_rx) = mpsc::channel::<Job>();
-        let (done_tx, done) = mpsc::channel::<Done>();
+        let (done_tx, done) = mpsc::channel::<CacheEntry>();
         std::thread::Builder::new()
             .name("preview-decoder".into())
             .spawn(move || worker_loop(job_rx, done_tx, wake))
@@ -85,7 +81,7 @@ impl Worker {
 
 /// Serves the most recent urgent request first (earlier urgent ones are stale: the
 /// selection has moved on), then prefetches in arrival order.
-fn worker_loop(jobs: Receiver<Job>, done: Sender<Done>, wake: Arc<OnceLock<Waker>>) {
+fn worker_loop(jobs: Receiver<Job>, done: Sender<CacheEntry>, wake: Arc<OnceLock<Waker>>) {
     let mut queue: VecDeque<Job> = VecDeque::new();
     loop {
         if queue.is_empty() {
@@ -106,9 +102,9 @@ fn worker_loop(jobs: Receiver<Job>, done: Sender<Done>, wake: Arc<OnceLock<Waker
             None => queue.pop_front().expect("queue is non-empty"),
         };
         let stamp = Stamp::of(&job.key);
-        let value = Arc::new(decode_key(&job.key));
+        let value = decode_key(&job.key).map(Arc::new);
         if done
-            .send(Done {
+            .send(CacheEntry {
                 key: job.key,
                 stamp,
                 value,
@@ -210,10 +206,7 @@ impl Preview {
     /// `path` (B)). Served from the cache when possible, otherwise decoded in the
     /// background; the image appears on a later draw.
     pub fn request(&mut self, path: Option<&Path>, baseline: Option<&Path>) {
-        self.source = None;
-        self.placement = None;
-        self.error = None;
-        self.current = None;
+        self.clear();
 
         if !self.kitty_available() {
             self.error = Some("Preview requires a Kitty-compatible terminal".into());
@@ -270,32 +263,31 @@ impl Preview {
     /// Looks `key` up in the cache, evicting the entry if the files changed since.
     fn cached(&mut self, key: &Key) -> Option<Decoded> {
         let pos = self.cache.iter().position(|e| &e.key == key)?;
-        if self.cache[pos].stamp != Stamp::of(key) {
-            self.cache.remove(pos);
+        let entry = self.cache.remove(pos)?;
+        if entry.stamp != Stamp::of(key) {
             return None;
         }
-        // Move to the back: most recently used.
-        let entry = self.cache.remove(pos)?;
         let value = entry.value.clone();
+        // Move to the back: most recently used.
         self.cache.push_back(entry);
         Some(value)
     }
 
-    fn insert(&mut self, key: Key, stamp: Stamp, value: Decoded) {
-        self.cache.retain(|e| e.key != key);
+    fn insert(&mut self, entry: CacheEntry) {
+        self.cache.retain(|e| e.key != entry.key);
         if self.cache.len() >= CACHE_CAPACITY {
             self.cache.pop_front();
         }
-        self.cache.push_back(CacheEntry { key, stamp, value });
+        self.cache.push_back(entry);
     }
 
     fn apply(&mut self, value: Decoded) {
-        match value.as_ref() {
+        match value {
             Ok(img) => {
-                self.source = Some(Arc::new(img.clone()));
+                self.source = Some(img);
                 self.error = None;
             }
-            Err(e) => self.error = Some(e.clone()),
+            Err(e) => self.error = Some(e),
         }
     }
 
@@ -304,16 +296,13 @@ impl Preview {
         let Some(worker) = &self.worker else {
             return;
         };
-        let mut finished = Vec::new();
-        while let Ok(done) = worker.done.try_recv() {
-            finished.push(done);
-        }
+        let finished: Vec<CacheEntry> = worker.done.try_iter().collect();
         for done in finished {
             self.in_flight.remove(&done.key);
             if self.current.as_ref() == Some(&done.key) && self.source.is_none() {
                 self.apply(done.value.clone());
             }
-            self.insert(done.key, done.stamp, done.value);
+            self.insert(done);
         }
     }
 
@@ -390,7 +379,7 @@ pub fn prepare_for_grid(img: &DynamicImage, grid: &Grid) -> DynamicImage {
             (f64::from(grid.px_width) / f64::from(w)).min(f64::from(grid.px_height) / f64::from(h));
         let tw = ((f64::from(w) * scale).round() as u32).clamp(1, grid.px_width);
         let th = ((f64::from(h) * scale).round() as u32).clamp(1, grid.px_height);
-        std::borrow::Cow::Owned(downscale(img, tw, th))
+        std::borrow::Cow::Owned(img.thumbnail_exact(tw, th))
     } else {
         std::borrow::Cow::Borrowed(img)
     };
@@ -420,14 +409,6 @@ pub fn prepare_for_grid(img: &DynamicImage, grid: &Grid) -> DynamicImage {
         i64::from((ch - h) / 2),
     );
     canvas
-}
-
-fn downscale(img: &DynamicImage, w: u32, h: u32) -> DynamicImage {
-    match img {
-        DynamicImage::ImageLuma8(i) => image::imageops::thumbnail(i, w, h).into(),
-        DynamicImage::ImageRgb8(i) => image::imageops::thumbnail(i, w, h).into(),
-        other => image::imageops::thumbnail(&other.to_rgb8(), w, h).into(),
-    }
 }
 
 /// Fast PNG encoding (speed over size: the bytes go to a local terminal).
