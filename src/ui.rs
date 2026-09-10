@@ -9,7 +9,7 @@ use crate::dicom::dicomdir::{
 };
 use crate::dicom::{parse_dicom_datetime_delta_ms, DiffStatus};
 use crate::textdiff::{word_diff, Change};
-use crate::validation::{SopClass, ValidationResult};
+use crate::validation::ValidationResult;
 use ratatui::widgets::FrameExt;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -358,18 +358,18 @@ fn fit(s: &str, width: usize) -> String {
     }
 }
 
-fn dir_row_line(view: &DirView, row: &DirRow) -> Line<'static> {
-    let indent = "  ".repeat(row.depth);
-    let indicator = if row.expandable {
-        if row.expanded {
-            "▼ "
-        } else {
-            "▶ "
-        }
-    } else {
-        "  "
+/// Indentation plus the ▼/▶ fold indicator of a tree row.
+fn tree_prefix(depth: usize, expandable: bool, expanded: bool) -> String {
+    let indicator = match (expandable, expanded) {
+        (false, _) => "  ",
+        (true, false) => "▶ ",
+        (true, true) => "▼ ",
     };
-    let prefix = format!("{indent}{indicator}");
+    format!("{}{indicator}", "  ".repeat(depth))
+}
+
+fn dir_row_line(view: &DirView, row: &DirRow) -> Line<'static> {
+    let prefix = tree_prefix(row.depth, row.expandable, row.expanded);
     let dim = Style::default().fg(Color::DarkGray);
 
     match &row.node {
@@ -588,126 +588,54 @@ fn record_line(view: &DirView, idx: usize, prefix: String) -> Line<'static> {
 }
 
 fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: bool) {
+    let diff_mode = app.meta.diff_mode;
+    let header_style = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
     let mut header_cells = vec![];
-    if app.meta.diff_mode {
-        header_cells.push(
-            Cell::from(" ").style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        );
+    if diff_mode {
+        header_cells.push(Cell::from(" "));
     }
-    header_cells.extend(vec![
-        Cell::from("  Tag").style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Name").style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("VR").style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Value").style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]);
-    let header = Row::new(header_cells).height(1);
+    header_cells.extend(["  Tag", "Name", "VR", "Value"].map(Cell::from));
+    let header = Row::new(header_cells).style(header_style).height(1);
 
     let rows: Vec<Row> = app
         .tags
         .visible
         .iter()
         .map(|tag| {
-            let indent = "  ".repeat(tag.depth);
-            let expand_indicator = if tag.is_expandable {
-                if tag.is_expanded {
-                    "▼ "
-                } else {
-                    "▶ "
-                }
-            } else {
-                "  "
+            let (marker, marker_style) = diff_marker(tag.diff_status.as_ref());
+            let row_style = match tag.diff_status {
+                Some(DiffStatus::Added) | Some(DiffStatus::Deleted) => marker_style,
+                Some(_) => Style::default(),
+                None if tag.is_private() => Style::default().fg(Color::DarkGray),
+                None => Style::default(),
             };
-            let tag_display = format!("{}{}{}", indent, expand_indicator, tag.tag);
-
-            let (row_style, value_cell) = if let Some(diff_status) = &tag.diff_status {
-                match diff_status {
-                    DiffStatus::Deleted => (
-                        Style::default().fg(Color::Red),
-                        Cell::from(tag.value.as_str()).style(Style::default().fg(Color::Red)),
-                    ),
-                    DiffStatus::Added => (
-                        Style::default().fg(Color::Green),
-                        Cell::from(tag.value.as_str()).style(Style::default().fg(Color::Green)),
-                    ),
-                    DiffStatus::Changed => {
-                        let value_cell = if let Some(ref baseline) = tag.baseline_value {
-                            let mut line = render_inline_diff(baseline, &tag.value);
-                            if let Some(delta_ms) =
-                                parse_dicom_datetime_delta_ms(&tag.vr, baseline, &tag.value)
-                            {
-                                let suffix = if delta_ms >= 0 {
-                                    format!(" (+{} ms)", delta_ms)
-                                } else {
-                                    format!(" ({} ms)", delta_ms)
-                                };
-                                line.spans.push(Span::styled(
-                                    suffix,
-                                    Style::default().fg(Color::DarkGray),
-                                ));
-                            }
-                            Cell::from(line)
-                        } else {
-                            Cell::from(tag.value.as_str()).style(Style::default().fg(Color::Blue))
-                        };
-                        (Style::default(), value_cell)
-                    }
-                    DiffStatus::Unchanged => (
-                        Style::default(),
-                        Cell::from(tag.value.as_str()).style(Style::default()),
-                    ),
+            let value_cell = match (&tag.diff_status, &tag.baseline_value) {
+                (Some(DiffStatus::Changed), Some(baseline)) => {
+                    Cell::from(changed_value_line(baseline, &tag.value, &tag.vr))
                 }
-            } else {
-                let base_style = if tag.is_private() {
-                    Style::default().fg(Color::DarkGray)
-                } else {
-                    Style::default()
-                };
-                (base_style, Cell::from(tag.value.as_str()).style(base_style))
+                (Some(DiffStatus::Changed), None) => {
+                    Cell::from(tag.value.as_str()).style(Style::default().fg(Color::Blue))
+                }
+                _ => Cell::from(tag.value.as_str()).style(row_style),
             };
 
             let mut row_cells = vec![];
-
-            if app.meta.diff_mode {
-                let (indicator, indicator_style) = if let Some(diff_status) = &tag.diff_status {
-                    match diff_status {
-                        DiffStatus::Added => ("+", Style::default().fg(Color::Green)),
-                        DiffStatus::Deleted => ("-", Style::default().fg(Color::Red)),
-                        DiffStatus::Changed => ("M", Style::default().fg(Color::Blue)),
-                        DiffStatus::Unchanged => (" ", Style::default()),
-                    }
-                } else {
-                    (" ", Style::default())
-                };
-                row_cells.push(Cell::from(indicator).style(indicator_style));
+            if diff_mode {
+                row_cells.push(Cell::from(marker).style(marker_style));
             }
-
-            row_cells.extend(vec![
+            let tag_display = format!(
+                "{}{}",
+                tree_prefix(tag.depth, tag.is_expandable, tag.is_expanded),
+                tag.tag
+            );
+            row_cells.extend([
                 Cell::from(tag_display).style(row_style),
                 Cell::from(tag.name.as_str()).style(row_style),
                 Cell::from(tag.vr.as_str()).style(row_style),
                 value_cell,
             ]);
-
             Row::new(row_cells)
         })
         .collect();
@@ -769,6 +697,28 @@ fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: b
     frame.render_stateful_widget(table, area, &mut app.tags.table_state);
 }
 
+/// Marker column glyph and colour for a diff status (`+`, `-`, `M`, or blank).
+fn diff_marker(status: Option<&DiffStatus>) -> (&'static str, Style) {
+    match status {
+        Some(DiffStatus::Added) => ("+", Style::default().fg(Color::Green)),
+        Some(DiffStatus::Deleted) => ("-", Style::default().fg(Color::Red)),
+        Some(DiffStatus::Changed) => ("M", Style::default().fg(Color::Blue)),
+        Some(DiffStatus::Unchanged) | None => (" ", Style::default()),
+    }
+}
+
+/// Word-level diff of a changed value, followed by the time delta for DA/TM/DT values.
+fn changed_value_line(baseline: &str, modified: &str, vr: &str) -> Line<'static> {
+    let mut line = render_inline_diff(baseline, modified);
+    if let Some(delta_ms) = parse_dicom_datetime_delta_ms(vr, baseline, modified) {
+        line.spans.push(Span::styled(
+            format!(" ({delta_ms:+} ms)"),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+    line
+}
+
 fn render_inline_diff(baseline: &str, modified: &str) -> Line<'static> {
     let spans = word_diff(baseline, modified)
         .into_iter()
@@ -790,28 +740,34 @@ fn render_inline_diff(baseline: &str, modified: &str) -> Line<'static> {
     Line::from(spans)
 }
 
-fn render_direct_help(frame: &mut Frame, area: Rect, app: &App) {
-    let help_area = Rect {
+/// Bottom row of the content pane: the search prompt, else a status message, else a
+/// pending diff-mark hint, else `help`.
+fn render_status_line(frame: &mut Frame, area: Rect, app: &App, help: &str) {
+    let status_area = Rect {
         x: area.x + 1,
         y: area.y + area.height.saturating_sub(1),
         width: area.width.saturating_sub(2),
         height: 1,
     };
+    let (text, color) = if app.search.active {
+        (format!("/{}_", app.search.query), Color::Yellow)
+    } else if let Some(message) = &app.marks.message {
+        (format!(" {message} "), Color::Yellow)
+    } else if let Some(hint) = (!app.meta.diff_mode)
+        .then(|| pending_mark_hint(app))
+        .flatten()
+    {
+        (hint, Color::Yellow)
+    } else {
+        (help.to_string(), Color::Cyan)
+    };
+    frame.render_widget(
+        Paragraph::new(text).style(Style::default().fg(color)),
+        status_area,
+    );
+}
 
-    if app.search.active {
-        let search_text = format!("/{}_", app.search.query);
-        let search = Paragraph::new(search_text).style(Style::default().fg(Color::Yellow));
-        frame.render_widget(search, help_area);
-        return;
-    }
-
-    if let Some(ref message) = app.marks.message {
-        let message =
-            Paragraph::new(format!(" {} ", message)).style(Style::default().fg(Color::Yellow));
-        frame.render_widget(message, help_area);
-        return;
-    }
-
+fn render_direct_help(frame: &mut Frame, area: Rect, app: &App) {
     let help_text = if app.meta.diff_mode {
         " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | c: Changes only | p: Preview | q/Esc: Quit "
     } else if app.dir_active() {
@@ -823,40 +779,10 @@ fn render_direct_help(frame: &mut Frame, area: Rect, app: &App) {
     } else {
         " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | q/Esc: Quit "
     };
-    let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
-    frame.render_widget(help, help_area);
+    render_status_line(frame, area, app, help_text);
 }
 
 fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
-    let help_area = Rect {
-        x: area.x + 1,
-        y: area.y + area.height.saturating_sub(1),
-        width: area.width.saturating_sub(2),
-        height: 1,
-    };
-
-    if app.search.active {
-        let search_text = format!("/{}_", app.search.query);
-        let search = Paragraph::new(search_text).style(Style::default().fg(Color::Yellow));
-        frame.render_widget(search, help_area);
-        return;
-    }
-
-    if let Some(ref message) = app.marks.message {
-        let message =
-            Paragraph::new(format!(" {} ", message)).style(Style::default().fg(Color::Yellow));
-        frame.render_widget(message, help_area);
-        return;
-    }
-
-    if !app.meta.diff_mode {
-        if let Some(hint) = pending_mark_hint(app) {
-            let hint = Paragraph::new(hint).style(Style::default().fg(Color::Yellow));
-            frame.render_widget(hint, help_area);
-            return;
-        }
-    }
-
     let help_text = match app.layout.focus {
         Focus::Explorer => {
             if app.meta.diff_mode {
@@ -881,8 +807,7 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
             }
         }
     };
-    let help = Paragraph::new(help_text).style(Style::default().fg(Color::Cyan));
-    frame.render_widget(help, help_area);
+    render_status_line(frame, area, app, help_text);
 }
 
 fn pending_mark_hint(app: &App) -> Option<String> {
@@ -939,50 +864,46 @@ fn render_validation_pane(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    let sop_class_text = match &app.meta.sop_class {
-        SopClass::Ct => "CT Image Storage",
-        SopClass::Mr => "MR Image Storage",
-        SopClass::Other(_) => "Other",
-        SopClass::Unknown => "Unknown",
-    };
-
-    let sop_class_uid = match &app.meta.sop_class {
-        SopClass::Ct => "1.2.840.10008.5.1.4.1.1.2",
-        SopClass::Mr => "1.2.840.10008.5.1.4.1.1.4",
-        SopClass::Other(uid) => uid.as_str(),
-        SopClass::Unknown => "N/A",
-    };
-
     let (title, border_color) = match &app.meta.validation_result {
         ValidationResult::Valid => (" ✓ All required fields present ", Color::Blue),
         ValidationResult::Invalid(_) => (" ✗ Missing required fields ", Color::Red),
         ValidationResult::NotApplicable => (" Validation not applicable ", Color::DarkGray),
     };
 
-    let mut lines = vec![Line::from(vec![Span::raw(format!(
-        "SOP Class: {} ({})",
-        sop_class_text, sop_class_uid
-    ))])];
-
+    let sop = &app.meta.sop_class;
+    let mut lines = vec![Line::from(format!("SOP Class: {} ({})", sop.name(), sop.uid()))];
     if let ValidationResult::Invalid(missing) = &app.meta.validation_result {
-        let missing_text = missing.join(", ");
-        lines.push(Line::from(vec![
-            Span::styled("Missing:   ", Style::default().fg(Color::Red)),
-            Span::styled(
-                missing_text,
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
-        ]));
+        lines.push(problem_line("Missing:   ", &missing.join(", ")));
     }
+    render_status_pane(frame, area, title, border_color, lines);
+}
 
+/// A red `label: details` line listing the problems found.
+fn problem_line(label: &'static str, details: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(label, Style::default().fg(Color::Red)),
+        Span::styled(
+            details.to_string(),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+    ])
+}
+
+/// Bordered pane whose title and frame share one colour.
+fn render_status_pane(
+    frame: &mut Frame,
+    area: Rect,
+    title: impl Into<Line<'static>>,
+    color: Color,
+    lines: Vec<Line<'static>>,
+) {
     let paragraph = Paragraph::new(lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
+            .border_style(Style::default().fg(color))
             .title(title)
-            .title_style(Style::default().fg(border_color)),
+            .title_style(Style::default().fg(color)),
     );
-
     frame.render_widget(paragraph, area);
 }
 
@@ -1019,21 +940,7 @@ fn render_dicomdir_health(frame: &mut Frame, area: Rect, view: &DirView) {
 
     if !dir.issues.is_empty() {
         let issues: Vec<String> = dir.issues.iter().map(|i| i.to_string()).collect();
-        lines.push(Line::from(vec![
-            Span::styled("Issues:    ", Style::default().fg(Color::Red)),
-            Span::styled(
-                issues.join(", "),
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
-        ]));
+        lines.push(problem_line("Issues:    ", &issues.join(", ")));
     }
-
-    let paragraph = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
-            .title(title)
-            .title_style(Style::default().fg(border_color)),
-    );
-    frame.render_widget(paragraph, area);
+    render_status_pane(frame, area, title, border_color, lines);
 }
