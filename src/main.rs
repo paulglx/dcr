@@ -7,13 +7,14 @@ mod validation;
 use app::App;
 use clap::{value_parser, Arg, Command};
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::prelude::*;
 use ratatui_image::picker::Picker;
-use std::{io, path::Path, path::PathBuf};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::{io, path::Path, path::PathBuf, thread};
 
 struct Args {
     /// Baseline and modified paths when `--diff` is given.
@@ -167,13 +168,39 @@ fn run_app<B: Backend<Error = io::Error>>(
     terminal: &mut Terminal<B>,
     app: &mut App,
 ) -> io::Result<()> {
+    let (tx, rx): (Sender<Event>, Receiver<Event>) = mpsc::channel();
+    spawn_input_thread(tx);
+
     loop {
         terminal.draw(|frame| ui::render(frame, app))?;
 
-        app.handle_events()?;
+        // Block until something happens, then coalesce whatever else is queued (a scroll
+        // burst, for instance) into a single redraw.
+        let event = rx
+            .recv()
+            .map_err(|_| io::Error::other("input thread stopped"))?;
+        app.handle_event(event);
+        while let Ok(event) = rx.try_recv() {
+            app.handle_event(event);
+        }
 
         if app.should_quit {
             return Ok(());
         }
     }
+}
+
+/// Reads terminal events on their own thread, so the main loop blocks on a channel that
+/// other producers can wake as well. Ends with the process (or when the receiver is gone).
+fn spawn_input_thread(tx: Sender<Event>) {
+    thread::Builder::new()
+        .name("input".into())
+        .spawn(move || {
+            while let Ok(event) = event::read() {
+                if tx.send(event).is_err() {
+                    break;
+                }
+            }
+        })
+        .expect("failed to spawn input thread");
 }

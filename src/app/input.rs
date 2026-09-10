@@ -1,7 +1,6 @@
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
 use ratatui::layout::Rect;
 use ratatui_explorer::Input;
-use std::io;
 
 use super::{App, AppMode, DiffSide, Focus};
 
@@ -20,68 +19,64 @@ fn key_to_explorer_input(code: KeyCode) -> Input {
 }
 
 impl App {
-    pub fn handle_events(&mut self) -> io::Result<()> {
-        if event::poll(std::time::Duration::from_millis(100))? {
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    if self.layout.mode == AppMode::Direct {
-                        self.handle_direct_key(key.code);
-                    } else {
-                        self.handle_explorer_key(key.code);
+    /// Applies one terminal event, then requests the preview it may have changed.
+    pub fn handle_event(&mut self, event: Event) {
+        match event {
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                if self.layout.mode == AppMode::Direct {
+                    self.handle_direct_key(key.code);
+                } else {
+                    self.handle_explorer_key(key.code);
+                }
+            }
+            Event::Mouse(mouse) => match mouse.kind {
+                MouseEventKind::ScrollDown => self.nav_down(3),
+                MouseEventKind::ScrollUp => self.nav_up(3),
+                MouseEventKind::Down(MouseButton::Left) => {
+                    if self.layout.mode == AppMode::Explorer {
+                        let hit = |area: Rect| {
+                            mouse.column >= area.x
+                                && mouse.column < area.x + area.width
+                                && mouse.row >= area.y
+                                && mouse.row < area.y + area.height
+                        };
+                        let content_area = if self.dir_active() {
+                            self.dirview.as_ref().map(|v| v.area).unwrap_or_default()
+                        } else {
+                            self.tags.area
+                        };
+                        if self.has_dicom_loaded() && hit(content_area) {
+                            self.layout.focus = Focus::TagTable;
+                        } else {
+                            self.handle_explorer_click(mouse.column, mouse.row);
+                        }
+                    }
+                    if self.layout.mode == AppMode::Direct || self.layout.focus == Focus::TagTable {
+                        let y = mouse.row;
+                        if self.dir_active() {
+                            let (rows, offset) = self
+                                .dirview
+                                .as_ref()
+                                .map(|v| (v.rows_area, v.table_state.offset()))
+                                .unwrap_or_default();
+                            if y >= rows.y && y < rows.y + rows.height {
+                                let index = offset + (y - rows.y) as usize;
+                                self.nav_select(index);
+                            }
+                        } else if y > self.tags.area.y + 1
+                            && y < self.tags.area.y + self.tags.area.height
+                        {
+                            let row_in_viewport = (y - self.tags.area.y - 2) as usize;
+                            let tag_index = self.tags.table_state.offset() + row_in_viewport;
+                            self.nav_select(tag_index);
+                        }
                     }
                 }
-                Event::Mouse(mouse) => match mouse.kind {
-                    MouseEventKind::ScrollDown => self.nav_down(3),
-                    MouseEventKind::ScrollUp => self.nav_up(3),
-                    MouseEventKind::Down(MouseButton::Left) => {
-                        if self.layout.mode == AppMode::Explorer {
-                            let hit = |area: Rect| {
-                                mouse.column >= area.x
-                                    && mouse.column < area.x + area.width
-                                    && mouse.row >= area.y
-                                    && mouse.row < area.y + area.height
-                            };
-                            let content_area = if self.dir_active() {
-                                self.dirview.as_ref().map(|v| v.area).unwrap_or_default()
-                            } else {
-                                self.tags.area
-                            };
-                            if self.has_dicom_loaded() && hit(content_area) {
-                                self.layout.focus = Focus::TagTable;
-                            } else {
-                                self.handle_explorer_click(mouse.column, mouse.row);
-                            }
-                        }
-                        if self.layout.mode == AppMode::Direct
-                            || self.layout.focus == Focus::TagTable
-                        {
-                            let y = mouse.row;
-                            if self.dir_active() {
-                                let (rows, offset) = self
-                                    .dirview
-                                    .as_ref()
-                                    .map(|v| (v.rows_area, v.table_state.offset()))
-                                    .unwrap_or_default();
-                                if y >= rows.y && y < rows.y + rows.height {
-                                    let index = offset + (y - rows.y) as usize;
-                                    self.nav_select(index);
-                                }
-                            } else if y > self.tags.area.y + 1
-                                && y < self.tags.area.y + self.tags.area.height
-                            {
-                                let row_in_viewport = (y - self.tags.area.y - 2) as usize;
-                                let tag_index = self.tags.table_state.offset() + row_in_viewport;
-                                self.nav_select(tag_index);
-                            }
-                        }
-                    }
-                    _ => {}
-                },
                 _ => {}
-            }
+            },
+            _ => {}
         }
         self.decode_pending_preview();
-        Ok(())
     }
 
     fn clear_search(&mut self) {
