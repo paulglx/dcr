@@ -96,7 +96,7 @@ impl App {
             should_quit: false,
         };
         app.preview
-            .decode(app.meta.path.as_deref(), app.meta.baseline_path.as_deref());
+            .request(app.meta.path.as_deref(), app.meta.baseline_path.as_deref());
         app
     }
 
@@ -451,10 +451,51 @@ impl App {
         self.preview.pending = self.preview.show;
     }
 
-    pub fn decode_pending_preview(&mut self) {
+    /// Requests the preview scheduled by the last selection change, if any, and warms
+    /// the cache with the files around it.
+    pub fn request_pending_preview(&mut self) {
+        if !std::mem::take(&mut self.preview.pending) {
+            return;
+        }
         let path = self.preview_path();
         self.preview
-            .decode_pending(path.as_deref(), self.meta.baseline_path.as_deref());
+            .request(path.as_deref(), self.meta.baseline_path.as_deref());
+        if !self.meta.diff_mode {
+            let neighbours = self.preview_neighbours();
+            self.preview.prefetch(neighbours);
+        }
+    }
+
+    /// Files likely to be selected next: the rows around the selection in the directory
+    /// view, otherwise the files around the highlighted explorer entry. Nearest first.
+    fn preview_neighbours(&self) -> Vec<PathBuf> {
+        const REACH: usize = 3;
+        let mut out: Vec<PathBuf> = Vec::new();
+        let mut push = |p: Option<PathBuf>| {
+            if let Some(p) = p {
+                if !out.contains(&p) {
+                    out.push(p);
+                }
+            }
+        };
+        if self.dir_active() {
+            if let Some(view) = &self.dirview {
+                if let Some(sel) = view.table_state.selected() {
+                    for i in around(sel, view.visible.len(), REACH) {
+                        push(view.preview_target_at(i));
+                    }
+                }
+            }
+        } else if let Some(explorer) = &self.layout.explorer {
+            let files = explorer.files();
+            for i in around(explorer.selected_idx(), files.len(), REACH) {
+                let file = &files[i];
+                if !file.is_dir {
+                    push(Some(file.path.clone()));
+                }
+            }
+        }
+        out
     }
 
     pub fn toggle_preview(&mut self) {
@@ -462,6 +503,20 @@ impl App {
         self.preview
             .toggle(path.as_deref(), self.meta.baseline_path.as_deref());
     }
+}
+
+/// Indices within `reach` of `selected` (exclusive), nearest first, alternating below/above.
+fn around(selected: usize, len: usize, reach: usize) -> Vec<usize> {
+    let mut out = Vec::with_capacity(reach * 2);
+    for d in 1..=reach {
+        if selected + d < len {
+            out.push(selected + d);
+        }
+        if let Some(i) = selected.checked_sub(d) {
+            out.push(i);
+        }
+    }
+    out
 }
 
 fn display_file_name(path: &Path) -> String {

@@ -17,7 +17,6 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
-use ratatui_image::StatefulImage;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     match app.layout.mode {
@@ -922,11 +921,7 @@ fn render_preview_pane(frame: &mut Frame, area: Rect, app: &mut App) {
     } else if app.preview.has_image() {
         let inner = block.inner(area);
         frame.render_widget(block, area);
-        app.preview.fit_to(inner);
-        if let Some(ref mut protocol) = app.preview.image {
-            let image = StatefulImage::new();
-            frame.render_stateful_widget(image, inner, protocol);
-        }
+        app.preview.render(inner, frame.buffer_mut());
     } else {
         let paragraph = Paragraph::new("Decoding...")
             .style(Style::default().fg(Color::DarkGray))

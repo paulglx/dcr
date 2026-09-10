@@ -219,15 +219,23 @@ impl DirView {
     /// file; a branch previews the middle instance of its middle child, recursively
     /// (the first instance of a series is often a localizer).
     fn update_preview_target(&mut self) {
-        self.preview_target = match self.selected_row().map(|r| r.node.clone()) {
-            Some(Node::Record(idx)) => self.representative_file(idx, 0),
-            Some(Node::UnreferencedFile(i)) => self
+        self.preview_target = self
+            .table_state
+            .selected()
+            .and_then(|i| self.preview_target_at(i));
+    }
+
+    /// Preview target for the visible row at `index`; see `update_preview_target`.
+    pub fn preview_target_at(&self, index: usize) -> Option<PathBuf> {
+        match &self.visible.get(index)?.node {
+            Node::Record(idx) => self.representative_file(*idx, 0),
+            Node::UnreferencedFile(i) => self
                 .dir
                 .unreferenced
-                .get(i)
+                .get(*i)
                 .map(|rel| self.dir.base_dir.join(rel)),
             _ => None,
-        };
+        }
     }
 
     fn representative_file(&self, idx: usize, depth: usize) -> Option<PathBuf> {

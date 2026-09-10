@@ -14,7 +14,19 @@ use crossterm::{
 use ratatui::prelude::*;
 use ratatui_image::picker::Picker;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::{Duration, Instant};
 use std::{io, path::Path, path::PathBuf, thread};
+
+/// How long a frame waits for a decode already under way, so the image lands together
+/// with the selection change instead of one frame later.
+const PREVIEW_GRACE: Duration = Duration::from_millis(8);
+
+/// Everything that wakes the main loop.
+enum Msg {
+    Input(Event),
+    /// A preview decode finished.
+    PreviewReady,
+}
 
 struct Args {
     /// Baseline and modified paths when `--diff` is given.
@@ -168,20 +180,35 @@ fn run_app<B: Backend<Error = io::Error>>(
     terminal: &mut Terminal<B>,
     app: &mut App,
 ) -> io::Result<()> {
-    let (tx, rx): (Sender<Event>, Receiver<Event>) = mpsc::channel();
-    spawn_input_thread(tx);
+    let (tx, rx): (Sender<Msg>, Receiver<Msg>) = mpsc::channel();
+    spawn_input_thread(tx.clone());
+    app.preview.set_waker(move || {
+        let _ = tx.send(Msg::PreviewReady);
+    });
 
     loop {
+        app.preview.poll_results();
         terminal.draw(|frame| ui::render(frame, app))?;
 
         // Block until something happens, then coalesce whatever else is queued (a scroll
-        // burst, for instance) into a single redraw.
-        let event = rx
+        // burst, several decodes) into a single redraw.
+        let msg = rx
             .recv()
             .map_err(|_| io::Error::other("input thread stopped"))?;
-        app.handle_event(event);
-        while let Ok(event) = rx.try_recv() {
-            app.handle_event(event);
+        handle_msg(app, msg);
+        while let Ok(msg) = rx.try_recv() {
+            handle_msg(app, msg);
+        }
+
+        let deadline = Instant::now() + PREVIEW_GRACE;
+        while app.preview.is_loading() && !app.should_quit {
+            let Some(left) = deadline.checked_duration_since(Instant::now()) else {
+                break;
+            };
+            match rx.recv_timeout(left) {
+                Ok(msg) => handle_msg(app, msg),
+                Err(_) => break,
+            }
         }
 
         if app.should_quit {
@@ -190,14 +217,21 @@ fn run_app<B: Backend<Error = io::Error>>(
     }
 }
 
-/// Reads terminal events on their own thread, so the main loop blocks on a channel that
-/// other producers can wake as well. Ends with the process (or when the receiver is gone).
-fn spawn_input_thread(tx: Sender<Event>) {
+fn handle_msg(app: &mut App, msg: Msg) {
+    match msg {
+        Msg::Input(event) => app.handle_event(event),
+        Msg::PreviewReady => app.preview.poll_results(),
+    }
+}
+
+/// Reads terminal events on their own thread so the main loop can also be woken by the
+/// preview decoder. Ends with the process (or when the receiver is gone).
+fn spawn_input_thread(tx: Sender<Msg>) {
     thread::Builder::new()
         .name("input".into())
         .spawn(move || {
             while let Ok(event) = event::read() {
-                if tx.send(event).is_err() {
+                if tx.send(Msg::Input(event)).is_err() {
                     break;
                 }
             }

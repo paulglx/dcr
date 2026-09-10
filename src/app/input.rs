@@ -76,7 +76,7 @@ impl App {
             },
             _ => {}
         }
-        self.decode_pending_preview();
+        self.request_pending_preview();
     }
 
     fn clear_search(&mut self) {
