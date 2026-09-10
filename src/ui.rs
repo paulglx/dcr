@@ -3,7 +3,7 @@ use crate::app::state::display_file_name;
 use crate::app::App;
 use crate::app::{AppMode, Focus};
 use crate::dicom::dicomdir::{
-    self, sop_class_name, transfer_syntax_name, ACCESSION_NUMBER, INSTANCE_NUMBER, MODALITY,
+    self, plural, sop_class_name, transfer_syntax_name, ACCESSION_NUMBER, INSTANCE_NUMBER, MODALITY,
     PATIENT_ID, PATIENT_NAME, REFERENCED_SOP_CLASS_UID, REFERENCED_TRANSFER_SYNTAX_UID,
     SERIES_DESCRIPTION, SERIES_NUMBER, STUDY_DATE, STUDY_DESCRIPTION,
 };
@@ -261,14 +261,6 @@ fn render_dir_view(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: bo
     view.area = area;
     view.rows_area = rows_area;
     frame.render_stateful_widget(table, rows_area, &mut view.table_state);
-}
-
-fn plural(n: usize, one: &str, many: &str) -> String {
-    if n == 1 {
-        format!("{n} {one}")
-    } else {
-        format!("{n} {many}")
-    }
 }
 
 /// Two-line strip above the tree: what the file-set holds, and how healthy it is.

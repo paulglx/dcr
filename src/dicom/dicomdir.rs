@@ -53,6 +53,15 @@ pub fn is_dicomdir(path: &Path, obj: &FileDicomObject<InMemDicomObject>) -> bool
         .unwrap_or(false)
 }
 
+/// `1 file` / `3 files`.
+pub fn plural(n: usize, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("{n} {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
 /// Hierarchy rank of a record type: patient < study < series < everything else (leaves).
 pub fn record_rank(record_type: &str) -> u8 {
     match record_type {
@@ -88,17 +97,6 @@ impl DirRecord {
         let in_use = int_attr(item, RECORD_IN_USE_FLAG)
             .map(|v| v != 0)
             .unwrap_or(true);
-        let file_id = item
-            .get(REFERENCED_FILE_ID)
-            .and_then(|e| e.value().to_multi_str().ok())
-            .map(|parts| {
-                parts
-                    .iter()
-                    .map(|p| p.trim_end_matches(['\0', ' ']).to_string())
-                    .filter(|p| !p.is_empty())
-                    .collect::<Vec<_>>()
-            })
-            .filter(|parts| !parts.is_empty());
         Self {
             offset: None,
             record_type,
@@ -108,7 +106,7 @@ impl DirRecord {
             parent: None,
             children: Vec::new(),
             leaf_count: 0,
-            file_id,
+            file_id: file_id_parts(item),
             file_exists: None,
             item: item.clone(),
         }
@@ -193,10 +191,7 @@ pub fn record_summary(item: &InMemDicomObject) -> Option<String> {
         }
         _ => {
             let num = str_attr(item, INSTANCE_NUMBER).map(|n| format!("#{n}"));
-            let file = item
-                .get(REFERENCED_FILE_ID)
-                .and_then(|e| e.value().to_multi_str().ok())
-                .and_then(|p| p.last().map(|s| s.trim().to_string()));
+            let file = file_id_parts(item).and_then(|parts| parts.last().cloned());
             let parts: Vec<String> = [num, file].into_iter().flatten().collect();
             (!parts.is_empty()).then(|| parts.join(" "))
         }
@@ -215,6 +210,20 @@ pub fn format_da(da: &str) -> String {
     } else {
         d.to_string()
     }
+}
+
+/// Components of the Referenced File ID, trimmed, `None` when absent or empty.
+fn file_id_parts(item: &InMemDicomObject) -> Option<Vec<String>> {
+    let parts: Vec<String> = item
+        .get(REFERENCED_FILE_ID)?
+        .value()
+        .to_multi_str()
+        .ok()?
+        .iter()
+        .map(|p| p.trim_end_matches(['\0', ' ']).to_string())
+        .filter(|p| !p.is_empty())
+        .collect();
+    (!parts.is_empty()).then_some(parts)
 }
 
 fn str_attr(item: &InMemDicomObject, tag: Tag) -> Option<String> {
@@ -258,57 +267,29 @@ pub enum DirIssue {
 
 impl std::fmt::Display for DirIssue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn plural(n: usize, one: &str, many: &str) -> String {
-            if n == 1 {
-                format!("{n} {one}")
-            } else {
-                format!("{n} {many}")
-            }
-        }
-        match self {
-            DirIssue::Inconsistent(flag) => write!(f, "consistency flag {flag}"),
-            DirIssue::InactiveRecords(n) => {
-                write!(f, "{}", plural(*n, "inactive record", "inactive records"))
-            }
-            DirIssue::MissingFiles(n) => {
-                write!(f, "{}", plural(*n, "missing file", "missing files"))
-            }
-            DirIssue::UnreferencedFiles(n) => write!(
-                f,
-                "{}",
-                plural(*n, "unreferenced file", "unreferenced files")
-            ),
-            DirIssue::DanglingOffsets(n) => {
-                write!(f, "{}", plural(*n, "dangling offset", "dangling offsets"))
-            }
-            DirIssue::UnreachableRecords(n) => write!(
-                f,
-                "{}",
-                plural(*n, "unreachable record", "unreachable records")
-            ),
-            DirIssue::HierarchyViolations(n) => write!(
-                f,
-                "{}",
-                plural(*n, "hierarchy violation", "hierarchy violations")
-            ),
-            DirIssue::DuplicateInstances(n) => write!(
-                f,
-                "{}",
-                plural(*n, "duplicate instance UID", "duplicate instance UIDs")
-            ),
-            DirIssue::MixedTransferSyntax(n) => write!(
-                f,
-                "{}",
-                plural(
-                    *n,
-                    "series with mixed transfer syntax",
-                    "series with mixed transfer syntaxes"
-                )
-            ),
+        let (n, one, many) = match self {
+            DirIssue::Inconsistent(flag) => return write!(f, "consistency flag {flag}"),
             DirIssue::OffsetsUnavailable => {
-                write!(f, "offsets unreadable, tree rebuilt from record order")
+                return write!(f, "offsets unreadable, tree rebuilt from record order")
             }
-        }
+            DirIssue::InactiveRecords(n) => (n, "inactive record", "inactive records"),
+            DirIssue::MissingFiles(n) => (n, "missing file", "missing files"),
+            DirIssue::UnreferencedFiles(n) => (n, "unreferenced file", "unreferenced files"),
+            DirIssue::DanglingOffsets(n) => (n, "dangling offset", "dangling offsets"),
+            DirIssue::UnreachableRecords(n) => (n, "unreachable record", "unreachable records"),
+            DirIssue::HierarchyViolations(n) => {
+                (n, "hierarchy violation", "hierarchy violations")
+            }
+            DirIssue::DuplicateInstances(n) => {
+                (n, "duplicate instance UID", "duplicate instance UIDs")
+            }
+            DirIssue::MixedTransferSyntax(n) => (
+                n,
+                "series with mixed transfer syntax",
+                "series with mixed transfer syntaxes",
+            ),
+        };
+        f.write_str(&plural(*n, one, many))
     }
 }
 
@@ -502,11 +483,7 @@ impl std::fmt::Display for InstanceRange {
         }
         let mut notes = Vec::new();
         if self.gaps > 0 {
-            notes.push(format!(
-                "{} gap{}",
-                self.gaps,
-                if self.gaps == 1 { "" } else { "s" }
-            ));
+            notes.push(plural(self.gaps, "gap", "gaps"));
         }
         if self.duplicates > 0 {
             notes.push(format!("{} dup", self.duplicates));
@@ -619,11 +596,8 @@ fn link_by_offsets(
         .filter_map(|(i, r)| r.offset.map(|o| (o, i)))
         .collect();
 
-    let resolve = |offset: Option<u32>| -> Option<usize> {
-        offset
-            .filter(|&o| o != 0)
-            .and_then(|o| by_offset.get(&(o as u64)).copied())
-    };
+    // Offset zero means "none"; anything else must name a record.
+    let resolve = |offset: u32| by_offset.get(&u64::from(offset)).copied();
 
     let mut dangling = 0usize;
     let mut visited = vec![false; records.len()];
@@ -631,12 +605,11 @@ fn link_by_offsets(
 
     // Iterative walk: (record index, parent) following lower-level then next links.
     let mut stack: Vec<(usize, Option<usize>)> = Vec::new();
-    match root_offset {
-        Some(o) if o != 0 => match resolve(Some(o)) {
+    if let Some(o) = root_offset.filter(|&o| o != 0) {
+        match resolve(o) {
             Some(idx) => stack.push((idx, None)),
             None => dangling += 1,
-        },
-        _ => {}
+        }
     }
 
     while let Some((idx, parent)) = stack.pop() {
@@ -653,16 +626,14 @@ fn link_by_offsets(
         }
 
         // Push the sibling first so the child is processed (and ordered) before it.
-        let next = records[idx].next_offset;
-        if next.is_some_and(|o| o != 0) {
-            match resolve(next) {
+        if let Some(o) = records[idx].next_offset.filter(|&o| o != 0) {
+            match resolve(o) {
                 Some(n) => stack.push((n, parent)),
                 None => dangling += 1,
             }
         }
-        let lower = records[idx].lower_offset;
-        if lower.is_some_and(|o| o != 0) {
-            match resolve(lower) {
+        if let Some(o) = records[idx].lower_offset.filter(|&o| o != 0) {
+            match resolve(o) {
                 Some(c) => stack.push((c, Some(idx))),
                 None => dangling += 1,
             }
@@ -815,13 +786,16 @@ fn compute_stats(records: &[DirRecord]) -> DirStats {
             }
         }
     }
-    let mut modalities: Vec<(String, usize)> = modalities.into_iter().collect();
-    modalities.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    stats.modalities = modalities;
-    let mut other_leaves: Vec<(String, usize)> = other_leaves.into_iter().collect();
-    other_leaves.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    stats.other_leaf_types = other_leaves;
+    stats.modalities = sorted_counts(modalities);
+    stats.other_leaf_types = sorted_counts(other_leaves);
     stats
+}
+
+/// Counts as a list, most frequent first, ties by name.
+fn sorted_counts(counts: HashMap<String, usize>) -> Vec<(String, usize)> {
+    let mut list: Vec<(String, usize)> = counts.into_iter().collect();
+    list.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    list
 }
 
 fn collect_issues(
