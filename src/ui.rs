@@ -734,10 +734,18 @@ fn render_tag_table(frame: &mut Frame, area: Rect, app: &mut App, in_explorer: b
     };
 
     let title = if app.meta.diff_mode {
-        if let Some(ref modified_name) = app.meta.modified_name {
-            format!(" DICOM Diff: {} ↔ {} ", app.meta.name, modified_name)
+        let changes = if app.tags.changes_only {
+            " [changes only]"
         } else {
-            format!(" DICOM Diff: {} ", app.meta.name)
+            ""
+        };
+        if let Some(ref modified_name) = app.meta.modified_name {
+            format!(
+                " DICOM Diff: {} ↔ {}{} ",
+                app.meta.name, modified_name, changes
+            )
+        } else {
+            format!(" DICOM Diff: {}{} ", app.meta.name, changes)
         }
     } else if app.dirview.is_some() {
         format!(" DICOMDIR (raw tags): {} ", app.meta.name)
@@ -808,7 +816,9 @@ fn render_direct_help(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    let help_text = if app.dir_active() {
+    let help_text = if app.meta.diff_mode {
+        " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | c: Changes only | p: Preview | q/Esc: Quit "
+    } else if app.dir_active() {
         " ↑/↓: Navigate | →/←: Expand/Collapse | Enter: Open file | t: Raw tags | /: Search | p: Preview | q/Esc: Quit "
     } else if app.dirview.is_some() {
         " ↑/↓: Navigate | →: Expand | ←: Collapse | t: Directory | /: Search | p: Preview | q/Esc: Quit "
@@ -854,7 +864,7 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
     let help_text = match app.layout.focus {
         Focus::Explorer => {
             if app.meta.diff_mode {
-                " ↑/↓: Navigate | a/b: Re-mark | x: Swap | Tab: Tags | Esc: Exit diff | q: Quit "
+                " ↑/↓: Navigate | a/b: Re-mark | x: Swap | c: Changes only | Tab: Tags | Esc: Exit diff | q: Quit "
             } else if app.has_dicom_loaded() {
                 " ↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | p: Preview | q: Quit "
             } else {
@@ -862,7 +872,9 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
             }
         }
         Focus::TagTable => {
-            if app.dir_active() {
+            if app.meta.diff_mode {
+                " Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | c: Changes only | p: Preview "
+            } else if app.dir_active() {
                 " Tab: Explorer | ↑/↓: Navigate | →/←: Expand/Collapse | Enter: Open file | t: Raw tags | /: Search | p: Preview "
             } else if app.dirview.is_some() {
                 " Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | t: Directory | /: Search | p: Preview "

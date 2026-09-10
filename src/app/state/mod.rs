@@ -401,6 +401,22 @@ impl App {
         }
     }
 
+    /// Diff mode only: shows or hides the rows whose value is identical in both files.
+    /// The search filter, if any, stays applied.
+    pub fn toggle_changes_only(&mut self) {
+        if self.meta.diff_mode {
+            self.set_changes_only(!self.tags.changes_only);
+        }
+    }
+
+    pub fn set_changes_only(&mut self, on: bool) {
+        if !self.meta.diff_mode || self.tags.changes_only == on {
+            return;
+        }
+        self.tags.changes_only = on;
+        self.tags.filter(&self.search.query);
+    }
+
     pub fn exit_diff(&mut self) {
         if !self.meta.diff_mode {
             return;
@@ -408,6 +424,7 @@ impl App {
         let baseline = self.marks.baseline.take();
         self.marks.clear();
         self.meta.diff_mode = false;
+        self.tags.changes_only = false;
         self.meta.modified_name = None;
         self.meta.selected_path = None;
         if let Some(path) = baseline {

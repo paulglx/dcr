@@ -5,7 +5,7 @@ mod ui;
 mod validation;
 
 use app::App;
-use clap::{value_parser, Arg, Command};
+use clap::{value_parser, Arg, ArgAction, Command};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
@@ -31,6 +31,8 @@ enum Msg {
 struct Args {
     /// Baseline and modified paths when `--diff` is given.
     diff: Option<Vec<PathBuf>>,
+    /// Start the diff with unchanged rows hidden.
+    changes_only: bool,
     /// Single file to view; explorer mode when absent.
     file: Option<PathBuf>,
 }
@@ -50,6 +52,14 @@ impl Args {
                     .help("Compare two DICOM files (baseline vs modified)"),
             )
             .arg(
+                Arg::new("changes-only")
+                    .short('c')
+                    .long("changes-only")
+                    .action(ArgAction::SetTrue)
+                    .requires("diff")
+                    .help("In diff mode, only show tags whose value differs (toggle with 'c')"),
+            )
+            .arg(
                 Arg::new("file")
                     .value_name("FILE")
                     .value_parser(value_parser!(PathBuf))
@@ -61,6 +71,7 @@ impl Args {
             diff: matches
                 .get_many::<PathBuf>("diff")
                 .map(|paths| paths.cloned().collect()),
+            changes_only: matches.get_flag("changes-only"),
             file: matches.get_one::<PathBuf>("file").cloned(),
         }
     }
@@ -112,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let validation_result = validation::validate_type1_fields(modified_path)
             .unwrap_or(validation::ValidationResult::NotApplicable);
 
-        App::new_with_diff(
+        let mut app = App::new_with_diff(
             tags,
             baseline_name,
             Some(modified_name),
@@ -122,7 +133,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(modified_path.clone()),
             Some(baseline_path.clone()),
             picker,
-        )
+        );
+        app.set_changes_only(args.changes_only);
+        app
     } else if let Some(file) = args.file {
         validate_path(&file)?;
         let obj = ::dicom_object::open_file(&file)?;

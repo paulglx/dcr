@@ -1,4 +1,4 @@
-use crate::dicom::DicomTag;
+use crate::dicom::{DicomTag, DiffStatus};
 use ratatui::layout::Rect;
 use ratatui::widgets::TableState;
 
@@ -7,6 +7,8 @@ pub struct Tags {
     pub visible: Vec<DicomTag>,
     pub all: Vec<DicomTag>,
     pub filtered: Option<Vec<DicomTag>>,
+    /// Diff mode only: hide rows whose value is the same in both files.
+    pub changes_only: bool,
     pub table_state: TableState,
     pub area: Rect,
 }
@@ -22,6 +24,7 @@ impl Tags {
             visible,
             all,
             filtered: None,
+            changes_only: false,
             table_state,
             area: Rect::default(),
         }
@@ -38,24 +41,31 @@ impl Tags {
         self.table_state.select(None);
     }
 
+    /// Rebuilds the visible tree from the tags matching `query` (case-insensitive substring
+    /// of the id or name) and, when `changes_only` is set, carrying a diff status other
+    /// than `Unchanged`. Rows without a diff status are never hidden by `changes_only`.
     pub fn filter(&mut self, query: &str) {
-        if query.is_empty() {
+        if query.is_empty() && !self.changes_only {
             self.filtered = None;
-            self.rebuild_visible_tags();
         } else {
             let query = query.to_lowercase();
+            let changes_only = self.changes_only;
             let filtered: Vec<DicomTag> = self
                 .all
                 .iter()
                 .filter(|tag| {
-                    tag.tag.to_lowercase().contains(&query)
-                        || tag.name.to_lowercase().contains(&query)
+                    let matches_query = query.is_empty()
+                        || tag.tag.to_lowercase().contains(&query)
+                        || tag.name.to_lowercase().contains(&query);
+                    let is_change =
+                        !changes_only || !matches!(tag.diff_status, Some(DiffStatus::Unchanged));
+                    matches_query && is_change
                 })
                 .cloned()
                 .collect();
             self.filtered = Some(filtered);
-            self.rebuild_visible_tags();
         }
+        self.rebuild_visible_tags();
         self.reset_selection();
     }
 

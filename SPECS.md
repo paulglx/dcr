@@ -16,6 +16,8 @@
 
 - `--diff` takes **exactly two** path arguments (baseline first, modified second). Supplying a
   different count is an error.
+- `-c` / `--changes-only` (requires `--diff`) starts the diff with the **changes-only** filter
+  enabled (§7.2). It is a plain flag with no value.
 - `--version`, `--help`, and the author/about text are provided automatically by the argument
   parser.
 
@@ -101,6 +103,7 @@ When the search input is **inactive**:
 | `←` / `h`   | Collapse the nearest expanded parent                   |
 | `/`         | Open the search input                                  |
 | `p`         | Toggle the image preview pane                          |
+| `c`         | Diff mode only: toggle the changes-only filter (§7.2)  |
 | `t`         | DICOMDIR only: toggle directory view ↔ raw tags (§11)  |
 | `Enter`     | DICOMDIR only: open the selected record's file (§11)   |
 
@@ -127,6 +130,7 @@ When the search input is **active**:
 | `a`                                    | Mark the highlighted file as diff **baseline** (A) — see §7.1 |
 | `b`                                    | Mark the highlighted file as diff **modified** (B) — see §7.1 |
 | `x`                                    | In diff mode: swap A ↔ B and re-diff                       |
+| `c`                                    | In diff mode: toggle the changes-only filter (§7.2)        |
 | `↑` / `k`, `↓` / `j`                   | Move within the file tree                                  |
 | `→` / `l` / `Enter`                    | Enter the selected directory, or select the file           |
 | `←` / `h`                              | Go to the parent directory                                 |
@@ -311,6 +315,23 @@ Search filters, preview toggling, and mouse behavior are unaffected; an active s
 is re-applied to the diff result when a diff opens or is recomputed. Interactive diff exists
 only in Explorer mode; CLI diff mode (`dcr -d`) is unchanged and has no marks.
 
+### 7.2 Changes-only filter
+
+While a diff is open, `c` toggles a **changes-only** filter that hides every row whose status
+is `Unchanged`, leaving only `Added`, `Deleted` and `Changed` rows. It is off by default;
+`dcr -d -c` (or `--changes-only`) starts CLI diff mode with it on.
+
+- `c` works in Direct mode and, in Explorer mode, with either the explorer or the tag table
+  focused. Outside diff mode the key does nothing.
+- The filter composes with the search filter (§6): a row is visible only if it matches both.
+  Toggling it rebuilds the visible tree and resets the selection to the first row, like a
+  search. Rows that carry no diff status (children of a top-level sequence) are never hidden
+  by this filter, so an expanded changed sequence still shows all of its items.
+- The filter is kept while the diff is re-marked or swapped (`a`/`b`/`x`) and is reset when
+  diff mode is exited.
+- While active, the tag table title reads `DICOM Diff: <baseline> ↔ <modified> [changes only]`.
+- Help lines in diff mode include `c: Changes only` (§9).
+
 ---
 
 ## 8. Image preview
@@ -384,6 +405,7 @@ panes a **dark-gray** border.
   the validation pane below.
 - A context-sensitive help line is drawn on the bottom row of the tag area:
   `↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | q/Esc: Quit`
+  - In diff mode: `↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | c: Changes only | p: Preview | q/Esc: Quit`
 
 ### Explorer mode
 
@@ -398,8 +420,9 @@ panes a **dark-gray** border.
 - Help line, depending on focus and whether a file is loaded:
   - Explorer focus, no file: `↑/↓: Navigate | →: Enter dir | ←: Parent dir | a/b: Mark diff | q: Quit`
   - Explorer focus, file loaded: `↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | p: Preview | q: Quit`
-  - Explorer focus, diff open: `↑/↓: Navigate | a/b: Re-mark | x: Swap | Tab: Tags | Esc: Exit diff | q: Quit`
+  - Explorer focus, diff open: `↑/↓: Navigate | a/b: Re-mark | x: Swap | c: Changes only | Tab: Tags | Esc: Exit diff | q: Quit`
   - TagTable focus: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview`
+  - TagTable focus, diff open: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | c: Changes only | p: Preview`
   - TagTable focus, DICOMDIR directory view: `Tab: Explorer | ↑/↓: Navigate | →/←: Expand/Collapse | Enter: Open file | t: Raw tags | /: Search | p: Preview`
   - TagTable focus, DICOMDIR raw view: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | t: Directory | /: Search | p: Preview`
   - TagTable focus, file opened from a DICOMDIR: `... | p: Preview | Esc: Back to DICOMDIR`

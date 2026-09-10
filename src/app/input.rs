@@ -129,6 +129,7 @@ impl App {
             KeyCode::Char('/') => self.search.active = true,
             KeyCode::Char('p') => self.toggle_preview(),
             KeyCode::Char('t') => self.toggle_dir_raw(),
+            KeyCode::Char('c') => self.toggle_changes_only(),
             KeyCode::Enter => self.open_selected_record(),
             KeyCode::Right | KeyCode::Char('l') => self.nav_expand(),
             KeyCode::Left | KeyCode::Char('h') => self.nav_collapse(),
@@ -161,6 +162,7 @@ impl App {
             KeyCode::Char('a') => self.mark_for_diff(DiffSide::Baseline),
             KeyCode::Char('b') => self.mark_for_diff(DiffSide::Modified),
             KeyCode::Char('x') => self.swap_diff_marks(),
+            KeyCode::Char('c') => self.toggle_changes_only(),
             KeyCode::Tab => {
                 if self.has_dicom_loaded() {
                     self.layout.focus = Focus::TagTable;
@@ -209,6 +211,7 @@ impl App {
             KeyCode::Char('/') => self.search.active = true,
             KeyCode::Char('p') => self.toggle_preview(),
             KeyCode::Char('t') => self.toggle_dir_raw(),
+            KeyCode::Char('c') => self.toggle_changes_only(),
             KeyCode::Enter => self.open_selected_record(),
             KeyCode::Right | KeyCode::Char('l') => self.nav_expand(),
             KeyCode::Left | KeyCode::Char('h') => self.nav_collapse(),
