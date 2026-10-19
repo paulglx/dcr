@@ -262,10 +262,7 @@ fn render_sort_menu(frame: &mut Frame, area: Rect, menu: &SortMenu, current: &So
                     Span::styled(label, style),
                 ]));
             }
-            lines.push(Line::from(Span::styled(
-                " ↑/↓ Enter: Sort | Esc: Close",
-                dim,
-            )));
+            lines.push(Line::from(Span::styled(" Enter: Sort | Esc: Close", dim)));
         }
         SortMenu::Tag { input, error } => {
             lines.push(Line::from(Span::styled(
@@ -882,15 +879,15 @@ fn render_status_line(frame: &mut Frame, area: Rect, app: &App, help: &str) {
 
 fn render_direct_help(frame: &mut Frame, area: Rect, app: &App) {
     let help_text = if app.meta.diff_mode {
-        " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | c: Changes only | p: Preview | q/Esc: Quit "
+        " /: Search | c: Changes only | p: Preview | q/Esc: Quit "
     } else if app.dir_active() {
-        " ↑/↓: Navigate | →/←: Expand/Collapse | Enter: Open file | t: Raw tags | /: Search | p: Preview | q/Esc: Quit "
+        " Enter: Open file | t: Raw tags | /: Search | p: Preview | q/Esc: Quit "
     } else if app.dirview.is_some() {
-        " ↑/↓: Navigate | →: Expand | ←: Collapse | t: Directory | /: Search | p: Preview | q/Esc: Quit "
+        " t: Directory | /: Search | p: Preview | q/Esc: Quit "
     } else if app.dir_return.is_some() {
-        " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | Esc: Back to DICOMDIR | q: Quit "
+        " /: Search | p: Preview | Esc: Back to DICOMDIR | q: Quit "
     } else {
-        " ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | q/Esc: Quit "
+        " /: Search | p: Preview | q/Esc: Quit "
     };
     render_status_line(frame, area, app, help_text);
 }
@@ -899,24 +896,24 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
     let help_text = match app.layout.focus {
         Focus::Explorer => {
             if app.meta.diff_mode {
-                " ↑/↓: Navigate | a/b: Re-mark | x: Swap | c: Changes only | s: Sort | Tab: Tags | Esc: Exit diff | q: Quit "
+                " a/b: Re-mark | x: Swap | c: Changes only | s: Sort | Tab: Tags | Esc: Exit diff | q: Quit "
             } else if app.has_dicom_loaded() {
-                " ↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | s: Sort | p: Preview | q: Quit "
+                " Tab: Tags | a/b: Mark diff | s: Sort | p: Preview | q: Quit "
             } else {
-                " ↑/↓: Navigate | →: Enter dir | ←: Parent dir | a/b: Mark diff | s: Sort | q: Quit "
+                " a/b: Mark diff | s: Sort | q: Quit "
             }
         }
         Focus::TagTable => {
             if app.meta.diff_mode {
-                " Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | c: Changes only | p: Preview "
+                " Tab/Esc: Explorer | /: Search | c: Changes only | p: Preview "
             } else if app.dir_active() {
-                " Tab: Explorer | ↑/↓: Navigate | →/←: Expand/Collapse | Enter: Open file | t: Raw tags | /: Search | p: Preview "
+                " Tab: Explorer | Enter: Open file | t: Raw tags | /: Search | p: Preview "
             } else if app.dirview.is_some() {
-                " Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | t: Directory | /: Search | p: Preview "
+                " Tab/Esc: Explorer | t: Directory | /: Search | p: Preview "
             } else if app.dir_return.is_some() {
-                " Tab: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | Esc: Back to DICOMDIR "
+                " Tab: Explorer | /: Search | p: Preview | Esc: Back to DICOMDIR "
             } else {
-                " Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview "
+                " Tab/Esc: Explorer | /: Search | p: Preview "
             }
         }
     };

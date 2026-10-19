@@ -405,8 +405,8 @@ panes a **dark-gray** border.
 - The left/main column is split **vertically** into the tag table (minimum height 5) above and
   the validation pane below.
 - A context-sensitive help line is drawn on the bottom row of the tag area:
-  `↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview | q/Esc: Quit`
-  - In diff mode: `↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | c: Changes only | p: Preview | q/Esc: Quit`
+  `/: Search | p: Preview | q/Esc: Quit`
+  - In diff mode: `/: Search | c: Changes only | p: Preview | q/Esc: Quit`
 
 ### Explorer mode
 
@@ -420,13 +420,13 @@ panes a **dark-gray** border.
     `Select a DICOM file to view its tags`.
 - Help line (on the bottom border of the right-hand pane — the content pane, or the
   placeholder when no file is loaded), depending on focus and whether a file is loaded:
-  - Explorer focus, no file: `↑/↓: Navigate | →: Enter dir | ←: Parent dir | a/b: Mark diff | s: Sort | q: Quit`
-  - Explorer focus, file loaded: `↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | s: Sort | p: Preview | q: Quit`
-  - Explorer focus, diff open: `↑/↓: Navigate | a/b: Re-mark | x: Swap | c: Changes only | s: Sort | Tab: Tags | Esc: Exit diff | q: Quit`
-  - TagTable focus: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview`
-  - TagTable focus, diff open: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | c: Changes only | p: Preview`
-  - TagTable focus, DICOMDIR directory view: `Tab: Explorer | ↑/↓: Navigate | →/←: Expand/Collapse | Enter: Open file | t: Raw tags | /: Search | p: Preview`
-  - TagTable focus, DICOMDIR raw view: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | t: Directory | /: Search | p: Preview`
+  - Explorer focus, no file: `a/b: Mark diff | s: Sort | q: Quit`
+  - Explorer focus, file loaded: `Tab: Tags | a/b: Mark diff | s: Sort | p: Preview | q: Quit`
+  - Explorer focus, diff open: `a/b: Re-mark | x: Swap | c: Changes only | s: Sort | Tab: Tags | Esc: Exit diff | q: Quit`
+  - TagTable focus: `Tab/Esc: Explorer | /: Search | p: Preview`
+  - TagTable focus, diff open: `Tab/Esc: Explorer | /: Search | c: Changes only | p: Preview`
+  - TagTable focus, DICOMDIR directory view: `Tab: Explorer | Enter: Open file | t: Raw tags | /: Search | p: Preview`
+  - TagTable focus, DICOMDIR raw view: `Tab/Esc: Explorer | t: Directory | /: Search | p: Preview`
   - TagTable focus, file opened from a DICOMDIR: `... | p: Preview | Esc: Back to DICOMDIR`
   - A pending diff mark or a diff status message overrides the help line (yellow, see §7.1).
     Direct mode shows the same variants (with `q/Esc: Quit`) and also displays status
