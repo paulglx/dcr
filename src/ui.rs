@@ -146,7 +146,7 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
             .block(block);
         frame.render_widget(paragraph, empty_area);
 
-        render_explorer_help(frame, explorer_area, app);
+        render_explorer_help(frame, empty_area, app);
     }
 }
 
@@ -899,7 +899,7 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
     let help_text = match app.layout.focus {
         Focus::Explorer => {
             if app.meta.diff_mode {
-                " ↑/↓: Navigate | a/b: Re-mark | x: Swap | c: Changes only | Tab: Tags | Esc: Exit diff | q: Quit "
+                " ↑/↓: Navigate | a/b: Re-mark | x: Swap | c: Changes only | s: Sort | Tab: Tags | Esc: Exit diff | q: Quit "
             } else if app.has_dicom_loaded() {
                 " ↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | s: Sort | p: Preview | q: Quit "
             } else {

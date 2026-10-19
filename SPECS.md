@@ -418,10 +418,11 @@ panes a **dark-gray** border.
   - With a file loaded: the tag table (minimum height 5) above the validation pane.
   - With no file loaded: a placeholder pane titled `DICOM Viewer` reading
     `Select a DICOM file to view its tags`.
-- Help line, depending on focus and whether a file is loaded:
+- Help line (on the bottom border of the right-hand pane — the content pane, or the
+  placeholder when no file is loaded), depending on focus and whether a file is loaded:
   - Explorer focus, no file: `↑/↓: Navigate | →: Enter dir | ←: Parent dir | a/b: Mark diff | s: Sort | q: Quit`
   - Explorer focus, file loaded: `↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | s: Sort | p: Preview | q: Quit`
-  - Explorer focus, diff open: `↑/↓: Navigate | a/b: Re-mark | x: Swap | c: Changes only | Tab: Tags | Esc: Exit diff | q: Quit`
+  - Explorer focus, diff open: `↑/↓: Navigate | a/b: Re-mark | x: Swap | c: Changes only | s: Sort | Tab: Tags | Esc: Exit diff | q: Quit`
   - TagTable focus: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview`
   - TagTable focus, diff open: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | c: Changes only | p: Preview`
   - TagTable focus, DICOMDIR directory view: `Tab: Explorer | ↑/↓: Navigate | →/←: Expand/Collapse | Enter: Open file | t: Raw tags | /: Search | p: Preview`

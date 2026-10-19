@@ -381,3 +381,18 @@ fn active_sort_shows_a_badge_values_and_the_menu() {
     assert!(out.contains("Sort by"), "{out}");
     assert!(out.contains("● ContentTime"), "{out}");
 }
+
+#[test]
+fn sort_hint_is_visible_with_or_without_a_file_loaded() {
+    let dir = sample("hint");
+    let mut app = explorer_in(&dir);
+    assert!(!app.has_dicom_loaded());
+    let out = screen(&mut app);
+    assert!(out.contains("s: Sort"), "{out}");
+
+    key(&mut app, KeyCode::Down);
+    key(&mut app, KeyCode::Down); // a.dcm
+    assert!(app.has_dicom_loaded());
+    let out = screen(&mut app);
+    assert!(out.contains("s: Sort"), "{out}");
+}
