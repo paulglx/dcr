@@ -1,17 +1,17 @@
 use crate::app::state::dirview::{DirView, Node, Row as DirRow};
 use crate::app::state::display_file_name;
 use crate::app::state::layout::explorer_scroll_offset;
+use crate::app::state::sort::{self, SortKey, SortMenu};
 use crate::app::App;
 use crate::app::{AppMode, Focus};
 use crate::dicom::dicomdir::{
-    self, plural, sop_class_name, transfer_syntax_name, ACCESSION_NUMBER, INSTANCE_NUMBER, MODALITY,
-    PATIENT_ID, PATIENT_NAME, REFERENCED_SOP_CLASS_UID, REFERENCED_TRANSFER_SYNTAX_UID,
+    self, plural, sop_class_name, transfer_syntax_name, ACCESSION_NUMBER, INSTANCE_NUMBER,
+    MODALITY, PATIENT_ID, PATIENT_NAME, REFERENCED_SOP_CLASS_UID, REFERENCED_TRANSFER_SYNTAX_UID,
     SERIES_DESCRIPTION, SERIES_NUMBER, STUDY_DATE, STUDY_DESCRIPTION,
 };
 use crate::dicom::{parse_dicom_datetime_delta_ms, DiffStatus};
 use crate::textdiff::{word_diff, Change};
 use crate::validation::ValidationResult;
-use ratatui::widgets::FrameExt;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -91,17 +91,31 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
         } else {
             Color::DarkGray
         };
-        let block = Block::default()
+        let mut block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(border_color))
             .title(format!(" {} ", explorer.cwd().display()));
+        if app.layout.sort.is_active() {
+            block = block.title_top(
+                Line::from(Span::styled(
+                    format!(" ⇅ {} ", app.layout.sort.key.label()),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .right_aligned(),
+            );
+        }
 
         let inner = block.inner(explorer_area);
         frame.render_widget(block, explorer_area);
-        frame.render_widget_ref(explorer.widget(), inner);
+        render_explorer_rows(frame, inner, app);
     }
 
-    render_explorer_marks(frame, explorer_area, app);
+    if let Some(menu) = &app.layout.sort_menu {
+        render_sort_menu(frame, explorer_area, menu, &app.layout.sort.key);
+    }
 
     if has_dicom {
         let tags_area = columns[1];
@@ -136,29 +150,58 @@ fn render_explorer(frame: &mut Frame, app: &mut App) {
     }
 }
 
-fn render_explorer_marks(frame: &mut Frame, area: Rect, app: &App) {
-    if !app.marks.any() {
+/// Explorer entries in display order. While sorted, each file shows its sort value
+/// (dimmed, right-aligned); diff marks show as an A / B badge at the right edge.
+fn render_explorer_rows(frame: &mut Frame, area: Rect, app: &App) {
+    let view_height = usize::from(area.height);
+    if view_height == 0 || area.width == 0 {
         return;
     }
-    let Some(ref explorer) = app.layout.explorer else {
+    let Some(explorer) = &app.layout.explorer else {
         return;
     };
+    let rows = app.layout.explorer_rows();
+    let selected = app.layout.explorer_row();
+    let offset = explorer_scroll_offset(selected, view_height);
+    let badge_width = if app.marks.any() { 4 } else { 0 };
+    let len = explorer.files().len();
 
-    let top = area.y + 1;
-    let view_height = area.height.saturating_sub(2) as usize;
-    if view_height == 0 || area.width < 5 {
-        return;
-    }
+    for (i, file) in rows.iter().enumerate().skip(offset).take(view_height) {
+        let row_area = Rect {
+            y: area.y + (i - offset) as u16,
+            height: 1,
+            ..area
+        };
+        let mut style = Style::default().fg(if file.is_dir {
+            Color::LightBlue
+        } else {
+            Color::White
+        });
+        if i == selected {
+            style = style.bg(Color::DarkGray);
+        }
+        frame.render_widget(Paragraph::new(file.name.as_str()).style(style), row_area);
 
-    let offset = explorer_scroll_offset(explorer.selected_idx(), view_height);
+        // The value gets the room the name leaves, and at least half the row.
+        let free = usize::from(area.width).saturating_sub(badge_width);
+        let value_room = free
+            .saturating_sub(file.name.chars().count() + 1)
+            .max(free / 2);
+        let index = app.layout.sort.index_at(i, len);
+        if let Some(label) = app.layout.sort.label(index).filter(|_| value_room > 2) {
+            let text = format!(" {}", fit_tail(label, value_room - 1));
+            let width = text.chars().count() as u16;
+            let value_area = Rect {
+                x: area.x + area.width - badge_width as u16 - width,
+                width,
+                ..row_area
+            };
+            frame.render_widget(
+                Paragraph::new(text).style(style.fg(Color::Gray).add_modifier(Modifier::DIM)),
+                value_area,
+            );
+        }
 
-    for (i, file) in explorer
-        .files()
-        .iter()
-        .enumerate()
-        .skip(offset)
-        .take(view_height)
-    {
         // Badge color follows the diffing direction: baseline red, modified green (§7).
         let (badge, color) = if app.marks.baseline.as_deref() == Some(file.path.as_path()) {
             (" A ", Color::Red)
@@ -167,15 +210,98 @@ fn render_explorer_marks(frame: &mut Frame, area: Rect, app: &App) {
         } else {
             continue;
         };
+        if area.width < 5 {
+            continue;
+        }
         let badge_area = Rect {
-            x: area.x + area.width - 4,
-            y: top + (i - offset) as u16,
+            x: area.x + area.width - 3,
             width: 3,
-            height: 1,
+            ..row_area
         };
         let badge_style = Style::default().fg(color).add_modifier(Modifier::BOLD);
         frame.render_widget(Paragraph::new(badge).style(badge_style), badge_area);
     }
+}
+
+/// Keeps the end of `s` within `width` columns, with a leading `…` when cut (the end of a
+/// UID or a time is what tells files apart).
+fn fit_tail(s: &str, width: usize) -> String {
+    let count = s.chars().count();
+    if count <= width {
+        return s.to_string();
+    }
+    let tail: String = s.chars().skip(count + 1 - width.max(1)).collect();
+    format!("…{tail}")
+}
+
+/// Sort picker drawn over the bottom of the explorer pane.
+fn render_sort_menu(frame: &mut Frame, area: Rect, menu: &SortMenu, current: &SortKey) {
+    let accent = Style::default().fg(Color::Yellow);
+    let dim = Style::default().fg(Color::DarkGray);
+    let mut lines: Vec<Line> = Vec::new();
+    match menu {
+        SortMenu::Pick(highlighted) => {
+            for (row, label) in sort::MENU.iter().enumerate() {
+                let marker = if row == current.menu_row() {
+                    "● "
+                } else {
+                    "  "
+                };
+                let label = if row == sort::MENU_OTHER && matches!(current, SortKey::Tag(_)) {
+                    format!("Other: {}", current.label())
+                } else {
+                    label.to_string()
+                };
+                let mut style = Style::default().fg(Color::White);
+                if row == *highlighted {
+                    style = style.bg(Color::DarkGray).add_modifier(Modifier::BOLD);
+                }
+                lines.push(Line::from(vec![
+                    Span::styled(format!(" {} ", row + 1), dim),
+                    Span::styled(marker, accent),
+                    Span::styled(label, style),
+                ]));
+            }
+            lines.push(Line::from(Span::styled(
+                " ↑/↓ Enter: Sort | Esc: Close",
+                dim,
+            )));
+        }
+        SortMenu::Tag { input, error } => {
+            lines.push(Line::from(Span::styled(
+                " Sort by tag (then filename):",
+                dim,
+            )));
+            lines.push(Line::from(vec![
+                Span::styled(" > ", accent),
+                Span::styled(format!("{input}_"), Style::default().fg(Color::White)),
+            ]));
+            lines.push(if *error {
+                Line::from(Span::styled(
+                    " Unknown tag",
+                    Style::default().fg(Color::Red),
+                ))
+            } else {
+                Line::from(Span::styled(" e.g. InstanceNumber or 0020,0013", dim))
+            });
+            lines.push(Line::from(Span::styled(" Enter: Sort | Esc: Back", dim)));
+        }
+    }
+
+    let height = (lines.len() as u16 + 2).min(area.height);
+    let width = area.width.saturating_sub(2).clamp(1, 40);
+    let popup = Rect {
+        x: area.x + 1,
+        y: area.y + area.height.saturating_sub(height + 1),
+        width,
+        height,
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(accent)
+        .title(" Sort by ");
+    frame.render_widget(ratatui::widgets::Clear, popup);
+    frame.render_widget(Paragraph::new(lines).block(block), popup);
 }
 
 /// The validation pane is 3 rows tall, 4 when it has a list of problems to show.
@@ -775,9 +901,9 @@ fn render_explorer_help(frame: &mut Frame, area: Rect, app: &App) {
             if app.meta.diff_mode {
                 " ↑/↓: Navigate | a/b: Re-mark | x: Swap | c: Changes only | Tab: Tags | Esc: Exit diff | q: Quit "
             } else if app.has_dicom_loaded() {
-                " ↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | p: Preview | q: Quit "
+                " ↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | s: Sort | p: Preview | q: Quit "
             } else {
-                " ↑/↓: Navigate | →: Enter dir | ←: Parent dir | a/b: Mark diff | q: Quit "
+                " ↑/↓: Navigate | →: Enter dir | ←: Parent dir | a/b: Mark diff | s: Sort | q: Quit "
             }
         }
         Focus::TagTable => {
@@ -858,7 +984,11 @@ fn render_validation_pane(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     let sop = &app.meta.sop_class;
-    let mut lines = vec![Line::from(format!("SOP Class: {} ({})", sop.name(), sop.uid()))];
+    let mut lines = vec![Line::from(format!(
+        "SOP Class: {} ({})",
+        sop.name(),
+        sop.uid()
+    ))];
     if let ValidationResult::Invalid(missing) = &app.meta.validation_result {
         lines.push(problem_line("Missing:   ", &missing.join(", ")));
     }

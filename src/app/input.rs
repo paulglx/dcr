@@ -3,6 +3,7 @@ use ratatui::layout::Position;
 use ratatui_explorer::Input;
 
 use super::state::layout::explorer_scroll_offset;
+use super::state::sort::{SortKey, SortMenu, MENU, MENU_OTHER};
 use super::{App, AppMode, DiffSide, Focus};
 
 fn key_to_explorer_input(code: KeyCode) -> Input {
@@ -26,6 +27,10 @@ impl App {
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
                 self.marks.message = None;
+                if self.layout.sort_menu.is_some() {
+                    self.handle_sort_menu_key(key.code);
+                    return;
+                }
                 match (&self.layout.mode, &self.layout.focus) {
                     (AppMode::Explorer, Focus::Explorer) => {
                         self.handle_explorer_focus_key(key.code)
@@ -37,6 +42,7 @@ impl App {
                 MouseEventKind::ScrollDown => self.nav_down(3),
                 MouseEventKind::ScrollUp => self.nav_up(3),
                 MouseEventKind::Down(MouseButton::Left) => {
+                    self.layout.sort_menu = None;
                     self.handle_click(Position::new(mouse.column, mouse.row))
                 }
                 _ => {}
@@ -167,10 +173,11 @@ impl App {
                 }
             }
             KeyCode::Char('p') => self.toggle_preview(),
+            KeyCode::Char('s') => {
+                self.layout.sort_menu = Some(SortMenu::Pick(self.layout.sort.key.menu_row()))
+            }
             _ => {
-                if let Some(explorer) = &mut self.layout.explorer {
-                    let _ = explorer.handle(key_to_explorer_input(code));
-                }
+                self.layout.explorer_input(key_to_explorer_input(code));
                 self.check_explorer_selection();
                 // Enter on a file also moves into the tags it just opened.
                 if code == KeyCode::Enter && !self.meta.diff_mode && self.has_dicom_loaded() {
@@ -193,20 +200,78 @@ impl App {
             return;
         }
 
-        if let Some(explorer) = &mut self.layout.explorer {
-            let selected = explorer.selected_idx();
-            let clicked = explorer_scroll_offset(selected, view_height) + usize::from(at.y - top);
-            if clicked >= explorer.files().len() {
-                return;
-            }
-            if clicked == selected && explorer.current().is_dir {
-                let _ = explorer.handle(Input::Right);
-            } else {
-                explorer.set_selected_idx(clicked);
-            }
+        let selected = self.layout.explorer_row();
+        let clicked = explorer_scroll_offset(selected, view_height) + usize::from(at.y - top);
+        let Some(entry) = self.layout.explorer_rows().get(clicked).copied() else {
+            return;
+        };
+        if clicked == selected && entry.is_dir {
+            self.layout.explorer_input(Input::Right);
+        } else {
+            self.layout.select_explorer_row(clicked);
         }
 
         self.check_explorer_selection();
+    }
+
+    /// Keys while the sort menu is open: pick a row (or type a tag for "Other").
+    fn handle_sort_menu_key(&mut self, code: KeyCode) {
+        let Some(menu) = self.layout.sort_menu.take() else {
+            return;
+        };
+        self.layout.sort_menu = match menu {
+            SortMenu::Pick(row) => match code {
+                KeyCode::Esc | KeyCode::Char('s') | KeyCode::Char('q') => None,
+                KeyCode::Up | KeyCode::Char('k') => {
+                    Some(SortMenu::Pick(row.checked_sub(1).unwrap_or(MENU.len() - 1)))
+                }
+                KeyCode::Down | KeyCode::Char('j') => Some(SortMenu::Pick((row + 1) % MENU.len())),
+                KeyCode::Char(c @ '1'..='9') if (c as usize - '1' as usize) < MENU.len() => {
+                    self.pick_sort_row(c as usize - '1' as usize)
+                }
+                KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.pick_sort_row(row),
+                _ => Some(SortMenu::Pick(row)),
+            },
+            SortMenu::Tag { mut input, error } => match code {
+                KeyCode::Esc => Some(SortMenu::Pick(MENU_OTHER)),
+                KeyCode::Enter => match SortKey::parse_tag(&input) {
+                    Some(key) => {
+                        self.layout.set_sort(key);
+                        None
+                    }
+                    None => Some(SortMenu::Tag { input, error: true }),
+                },
+                KeyCode::Backspace => {
+                    input.pop();
+                    Some(SortMenu::Tag {
+                        input,
+                        error: false,
+                    })
+                }
+                KeyCode::Char(c) => {
+                    input.push(c);
+                    Some(SortMenu::Tag {
+                        input,
+                        error: false,
+                    })
+                }
+                _ => Some(SortMenu::Tag { input, error }),
+            },
+        };
+    }
+
+    /// Applies the sort of menu `row`, or opens the tag prompt for "Other".
+    fn pick_sort_row(&mut self, row: usize) -> Option<SortMenu> {
+        match SortKey::from_menu(row) {
+            Some(key) => {
+                self.layout.set_sort(key);
+                None
+            }
+            None => Some(SortMenu::Tag {
+                input: self.layout.sort.key.prompt_text(),
+                error: false,
+            }),
+        }
     }
 
     fn check_explorer_selection(&mut self) {

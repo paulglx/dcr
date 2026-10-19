@@ -4,6 +4,7 @@ pub mod marks;
 pub mod meta;
 pub mod preview;
 pub mod search;
+pub mod sort;
 pub mod tags;
 
 use crate::dicom::DicomTag;
@@ -23,6 +24,7 @@ use self::marks::Marks;
 use self::meta::FileMeta;
 use self::preview::Preview;
 use self::search::Search;
+use self::sort::ExplorerSort;
 use self::tags::Tags;
 
 pub struct App {
@@ -64,6 +66,8 @@ impl App {
                 focus: Focus::TagTable,
                 explorer: None,
                 explorer_area: Rect::default(),
+                sort: ExplorerSort::default(),
+                sort_menu: None,
             },
         )
     }
@@ -79,6 +83,8 @@ impl App {
                 focus: Focus::Explorer,
                 explorer: Some(explorer),
                 explorer_area: Rect::default(),
+                sort: ExplorerSort::default(),
+                sort_menu: None,
             },
         )
     }
@@ -469,12 +475,11 @@ impl App {
                     }
                 }
             }
-        } else if let Some(explorer) = &self.layout.explorer {
-            let files = explorer.files();
-            for i in around(explorer.selected_idx(), files.len(), REACH) {
-                let file = &files[i];
-                if !file.is_dir {
-                    push(Some(file.path.clone()));
+        } else {
+            let rows = self.layout.explorer_rows();
+            for i in around(self.layout.explorer_row(), rows.len(), REACH) {
+                if !rows[i].is_dir {
+                    push(Some(rows[i].path.clone()));
                 }
             }
         }

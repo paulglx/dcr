@@ -131,6 +131,7 @@ When the search input is **active**:
 | `b`                                    | Mark the highlighted file as diff **modified** (B) — see §7.1 |
 | `x`                                    | In diff mode: swap A ↔ B and re-diff                       |
 | `c`                                    | In diff mode: toggle the changes-only filter (§7.2)        |
+| `s`                                    | Open the sort menu (§10.1)                                 |
 | `↑` / `k`, `↓` / `j`                   | Move within the file tree                                  |
 | `→` / `l` / `Enter`                    | Enter the selected directory, or select the file           |
 | `←` / `h`                              | Go to the parent directory                                 |
@@ -418,8 +419,8 @@ panes a **dark-gray** border.
   - With no file loaded: a placeholder pane titled `DICOM Viewer` reading
     `Select a DICOM file to view its tags`.
 - Help line, depending on focus and whether a file is loaded:
-  - Explorer focus, no file: `↑/↓: Navigate | →: Enter dir | ←: Parent dir | a/b: Mark diff | q: Quit`
-  - Explorer focus, file loaded: `↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | p: Preview | q: Quit`
+  - Explorer focus, no file: `↑/↓: Navigate | →: Enter dir | ←: Parent dir | a/b: Mark diff | s: Sort | q: Quit`
+  - Explorer focus, file loaded: `↑/↓: Navigate | →: Enter | ←: Back | Tab: Tags | a/b: Mark diff | s: Sort | p: Preview | q: Quit`
   - Explorer focus, diff open: `↑/↓: Navigate | a/b: Re-mark | x: Swap | c: Changes only | Tab: Tags | Esc: Exit diff | q: Quit`
   - TagTable focus: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | p: Preview`
   - TagTable focus, diff open: `Tab/Esc: Explorer | ↑/↓: Navigate | →: Expand | ←: Collapse | /: Search | c: Changes only | p: Preview`
@@ -448,6 +449,33 @@ health instead (§11.4) and is 4 rows tall when there is at least one issue.
   metadata, preview, and search query/state are reset. If the tag table had focus, focus
   returns to the explorer.
 - A file that fails to open is handled gracefully (the display is cleared rather than crashing).
+
+### 10.1 Sorting
+
+`s` (explorer focus) opens a **Sort by** menu over the bottom of the explorer pane. The
+current key is marked `●`. `↑/↓` + `Enter` (or the digit of the row) applies a key; `Esc` /
+`s` closes the menu. Any mouse click also closes it.
+
+| Key               | Order of files                                                        |
+| ----------------- | --------------------------------------------------------------------- |
+| `Filename`        | Default: the explorer's own name order                                |
+| `SOPInstanceUID`  | SOP Instance UID, digit runs compared by value (`1.2.9` < `1.2.10`)   |
+| `ContentTime`     | ContentDate, then ContentTime                                         |
+| `AcquisitionTime` | AcquisitionDate, then AcquisitionTime; else AcquisitionDateTime       |
+| `Other tag…`      | A typed tag: keyword (`InstanceNumber`, case-sensitive), `(gggg,eeee)`, `gggg,eeee` or `ggggeeee`. An unknown tag shows `Unknown tag` and keeps the prompt open; `Esc` goes back to the menu |
+
+- Only files move: `../` and folders stay on top in name order. Ties, and files that lack
+  the attribute or are not DICOM (listed last), fall back to the file name.
+- Numeric VRs (IS, DS, US, SS, UL, SL, UV, SV, FL, FD) compare by value, value by value;
+  DA / TM / DT compare as text; anything else compares with digit runs by value.
+- Values are read from each file's header (up to Pixel Data) and cached per key; choosing a
+  key again from the menu re-reads the files. The highlighted entry stays highlighted.
+- The sort **stays active across folders**: entering another folder sorts it too.
+- While a sort other than `Filename` is active:
+  - the explorer's top border shows a **`⇅ <key>`** badge (black on yellow, bold) on the right;
+  - each file shows its sort value dimmed and right-aligned (cut from the left with `…`
+    when too long, so the end of a UID or time stays visible).
+- Keyboard and mouse navigation follow the displayed order.
 
 ### Mouse interaction details
 
