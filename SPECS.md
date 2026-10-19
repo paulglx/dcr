@@ -459,10 +459,11 @@ current key is marked `●`. `↑/↓` + `Enter` (or the digit of the row) appli
 | Key               | Order of files                                                        |
 | ----------------- | --------------------------------------------------------------------- |
 | `Filename`        | Default: the explorer's own name order                                |
+| `InstanceNumber`  | Instance Number, by value                                             |
 | `SOPInstanceUID`  | SOP Instance UID, digit runs compared by value (`1.2.9` < `1.2.10`)   |
 | `ContentTime`     | ContentDate, then ContentTime                                         |
 | `AcquisitionTime` | AcquisitionDate, then AcquisitionTime; else AcquisitionDateTime       |
-| `Other tag…`      | A typed tag: keyword (`InstanceNumber`, case-sensitive), `(gggg,eeee)`, `gggg,eeee` or `ggggeeee`. An unknown tag shows `Unknown tag` and keeps the prompt open; `Esc` goes back to the menu |
+| `Other tag…`      | A typed tag: keyword (`InstanceNumber`, case-sensitive), `(gggg,eeee)`, `gggg,eeee` or `ggggeeee`. A tag that has its own row (InstanceNumber, SOPInstanceUID) selects that row. An unknown tag shows `Unknown tag` and keeps the prompt open; `Esc` goes back to the menu |
 
 - Only files move: `../` and folders stay on top in name order. Ties, and files that lack
   the attribute or are not DICOM (listed last), fall back to the file name.

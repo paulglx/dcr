@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 pub enum SortKey {
     #[default]
     FileName,
+    InstanceNumber,
     SopInstanceUid,
     /// ContentDate + ContentTime.
     ContentTime,
@@ -26,8 +27,9 @@ pub enum SortKey {
 }
 
 /// Rows of the sort menu; the last one opens the tag prompt.
-pub const MENU: [&str; 5] = [
+pub const MENU: [&str; 6] = [
     "Filename",
+    "InstanceNumber",
     "SOPInstanceUID",
     "ContentTime",
     "AcquisitionTime",
@@ -40,9 +42,10 @@ impl SortKey {
     pub fn from_menu(row: usize) -> Option<Self> {
         match row {
             0 => Some(Self::FileName),
-            1 => Some(Self::SopInstanceUid),
-            2 => Some(Self::ContentTime),
-            3 => Some(Self::AcquisitionTime),
+            1 => Some(Self::InstanceNumber),
+            2 => Some(Self::SopInstanceUid),
+            3 => Some(Self::ContentTime),
+            4 => Some(Self::AcquisitionTime),
             _ => None,
         }
     }
@@ -51,26 +54,33 @@ impl SortKey {
     pub fn menu_row(&self) -> usize {
         match self {
             Self::FileName => 0,
-            Self::SopInstanceUid => 1,
-            Self::ContentTime => 2,
-            Self::AcquisitionTime => 3,
+            Self::InstanceNumber => 1,
+            Self::SopInstanceUid => 2,
+            Self::ContentTime => 3,
+            Self::AcquisitionTime => 4,
             Self::Tag(_) => MENU_OTHER,
         }
     }
 
     /// Accepts a keyword (`InstanceNumber`), `(gggg,eeee)`, `gggg,eeee` or `ggggeeee`.
+    /// A tag that has its own menu row maps to that row's key.
     pub fn parse_tag(input: &str) -> Option<Self> {
         StandardDataDictionary
             .parse_tag(input.trim())
-            .map(Self::Tag)
+            .map(|tag| match tag {
+                tags::INSTANCE_NUMBER => Self::InstanceNumber,
+                tags::SOP_INSTANCE_UID => Self::SopInstanceUid,
+                tag => Self::Tag(tag),
+            })
     }
 
     pub fn label(&self) -> String {
         match self {
             Self::FileName => MENU[0].to_string(),
-            Self::SopInstanceUid => MENU[1].to_string(),
-            Self::ContentTime => MENU[2].to_string(),
-            Self::AcquisitionTime => MENU[3].to_string(),
+            Self::InstanceNumber => MENU[1].to_string(),
+            Self::SopInstanceUid => MENU[2].to_string(),
+            Self::ContentTime => MENU[3].to_string(),
+            Self::AcquisitionTime => MENU[4].to_string(),
             Self::Tag(tag) => StandardDataDictionary
                 .by_tag(*tag)
                 .map(|e| e.alias.to_string())
@@ -89,6 +99,7 @@ impl SortKey {
     fn value(&self, obj: &DefaultDicomObject) -> Option<SortValue> {
         match self {
             Self::FileName => None,
+            Self::InstanceNumber => tag_value(obj, tags::INSTANCE_NUMBER),
             Self::SopInstanceUid => text(obj, tags::SOP_INSTANCE_UID).map(SortValue::Text),
             Self::ContentTime => date_time(obj, tags::CONTENT_DATE, tags::CONTENT_TIME),
             Self::AcquisitionTime => date_time(obj, tags::ACQUISITION_DATE, tags::ACQUISITION_TIME)

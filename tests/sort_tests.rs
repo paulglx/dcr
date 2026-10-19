@@ -211,7 +211,7 @@ fn acquisition_time_falls_back_to_acquisition_datetime() {
 }
 
 #[test]
-fn other_tag_sorts_numbers_by_value_then_by_name() {
+fn instance_number_sorts_by_value_then_by_name() {
     let dir = folder(
         "other",
         &[
@@ -239,12 +239,12 @@ fn other_tag_sorts_numbers_by_value_then_by_name() {
         ],
     );
     let mut app = explorer_in(&dir);
-    app.layout
-        .set_sort(SortKey::parse_tag("InstanceNumber").unwrap());
-    assert_eq!(
-        names(&app),
-        ["../", "sub/", "a.dcm", "b.dcm", "x.dcm", "notes.txt"]
-    );
+    let expected = ["../", "sub/", "a.dcm", "b.dcm", "x.dcm", "notes.txt"];
+    app.layout.set_sort(SortKey::InstanceNumber);
+    assert_eq!(names(&app), expected);
+    // The same attribute through the generic tag path.
+    app.layout.set_sort(SortKey::Tag(Tag(0x0020, 0x0013)));
+    assert_eq!(names(&app), expected);
 }
 
 #[test]
@@ -281,14 +281,14 @@ fn menu_picks_a_key_and_the_tag_prompt_validates() {
 
     key(&mut app, KeyCode::Char('s'));
     assert_eq!(app.layout.sort_menu, Some(SortMenu::Pick(0)));
-    key(&mut app, KeyCode::Char('3'));
+    key(&mut app, KeyCode::Char('4'));
     assert_eq!(app.layout.sort_menu, None);
     assert_eq!(app.layout.sort.key, SortKey::ContentTime);
 
     key(&mut app, KeyCode::Char('s'));
     assert_eq!(
         app.layout.sort_menu,
-        Some(SortMenu::Pick(2)),
+        Some(SortMenu::Pick(3)),
         "opens on the current key"
     );
     key(&mut app, KeyCode::Down);
@@ -314,8 +314,14 @@ fn menu_picks_a_key_and_the_tag_prompt_validates() {
     }
     key(&mut app, KeyCode::Enter);
     assert_eq!(app.layout.sort_menu, None);
-    assert_eq!(app.layout.sort.key, SortKey::Tag(Tag(0x0020, 0x0013)));
-    assert_eq!(app.layout.sort.key.label(), "InstanceNumber");
+    assert_eq!(
+        app.layout.sort.key,
+        SortKey::InstanceNumber,
+        "a tag with its own row selects that row"
+    );
+    key(&mut app, KeyCode::Char('s'));
+    assert_eq!(app.layout.sort_menu, Some(SortMenu::Pick(1)));
+    key(&mut app, KeyCode::Esc);
 
     key(&mut app, KeyCode::Char('s'));
     key(&mut app, KeyCode::Char('1'));
@@ -333,11 +339,15 @@ fn natural_order_compares_digit_runs_by_value() {
 
 #[test]
 fn tag_parsing_accepts_keywords_and_numbers() {
-    let instance_number = Some(SortKey::Tag(Tag(0x0020, 0x0013)));
+    let instance_number = Some(SortKey::InstanceNumber);
     assert_eq!(SortKey::parse_tag("InstanceNumber"), instance_number);
     assert_eq!(SortKey::parse_tag(" (0020,0013) "), instance_number);
     assert_eq!(SortKey::parse_tag("0020,0013"), instance_number);
     assert_eq!(SortKey::parse_tag("00200013"), instance_number);
+    assert_eq!(
+        SortKey::parse_tag("SliceLocation"),
+        Some(SortKey::Tag(Tag(0x0020, 0x1041)))
+    );
     assert_eq!(SortKey::parse_tag("NotATag"), None);
 }
 
